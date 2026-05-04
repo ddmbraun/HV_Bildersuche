@@ -415,15 +415,6 @@
      KONFIGURATION  –  Bitte einmal eintragen
      ════════════════════════════════════════════════════════ -->
 <script>
-  // ┌──────────────────────────────────────────────────────────┐
-  // │  HIER AUSFÜLLEN (einmalig – danach vergessen):           │
-  // │                                                          │
-  // │  CLIENT_ID: Ihre OAuth 2.0 Web-Client-ID aus der        │
-  // │  Google Cloud Console (Anleitung unten im Code).         │
-  // │                                                          │
-  // │  SPREADSHEET_ID + SHEET_NAME: bereits eingetragen,       │
-  // │  passen Sie diese an falls nötig.                        │
-  // └──────────────────────────────────────────────────────────┘
   const CLIENT_ID       = "451736556171-r5r4ujv2ae16m7jc3scvn84i26rqe1gf.apps.googleusercontent.com";
   const SPREADSHEET_ID  = "13V5ftPAAlZ-L5IFXpRkdqoVaI8DZjzjsJuUvn5KKgOg";
   const SHEET_NAME      = "Datenbank_Hausverwaltung_Bilder_V2";
@@ -432,15 +423,17 @@
   // Spalten-Index (A=0, B=1 usw.) – bitte nicht ändern
   const COL = {
     datei_id:  0,   // A – Google Drive File-ID
-    vorschau_s:1,   // B – =IMAGE() Formel (Sheets)
-    strasse:   2,   // C – Straße
-    ort:       3,   // D – Ort
-    datum:     4,   // E – Datum
-    pfad:      5,   // F – Ordnerpfad
-    vorschau:  6,   // G – Thumbnail-URL (AppSheet/Browser)
-    original:  7,   // H – Vollbild-URL
-    lat:       8,   // I – Latitude
-    lon:       9,   // J – Longitude
+    strasse:   1,   // B – Straße (nur Name, z.B. "Humboldtstraße")
+    hausnummer:2,   // C – Hausnummer
+    plz:       3,   // D – PLZ
+    ort:       4,   // E – Ort (Stadt – Stadtteil)
+    datum:     5,   // F – Datum
+    pfad:      6,   // G – Ordnerpfad
+    vorschau:  7,   // H – Thumbnail-URL (AppSheet/Browser)
+    original:  8,   // I – Vollbild-URL
+    lat:       9,   // J – Latitude
+    lon:       10,  // K – Longitude
+    vorschau_s:11,  // L – =IMAGE() Formel (Sheets)
   };
 </script>
 
@@ -464,10 +457,6 @@
 <div id="setup-hinweis">
   <strong>⚠️ Einrichtung erforderlich</strong>
   Bitte die <strong>CLIENT_ID</strong> am Anfang dieser HTML-Datei eintragen.
-  Anleitung: Google Cloud Console → APIs &amp; Dienste → Anmeldedaten →
-  OAuth 2.0-Client-IDs → Webanwendung erstellen → diese Datei als
-  „Autorisierter JavaScript-Ursprung" und als „Autorisierte Weiterleitungs-URI" eintragen
-  (z. B. <code>file://</code> oder Ihren Serverpfad).
 </div>
 
 <div id="login-screen">
@@ -528,7 +517,7 @@
      ════════════════════════════════════════════════════════ -->
 <script>
 // ── Globale Variablen ────────────────────────────────────────
-let alleZeilen  = [];   // Alle Sheet-Zeilen
+let alleZeilen  = [];
 let gefiltertZeilen = [];
 let tokenClient = null;
 let accessToken = null;
@@ -567,24 +556,22 @@ function setStatus(text, typ) {
 }
 
 function zeilenObjekt(row) {
+  const strasse = row[COL.strasse]    || "";
+  const hausnr  = row[COL.hausnummer] || "";
   return {
-    datei_id: row[COL.datei_id]  || "",
-    strasse:  row[COL.strasse]   || "",
-    ort:      row[COL.ort]       || "",
-    datum:    row[COL.datum]     || "",
-    pfad:     row[COL.pfad]      || "",
-    vorschau: row[COL.vorschau]  || "",
-    original: row[COL.original]  || "",
-    lat:      row[COL.lat]       || "",
-    lon:      row[COL.lon]       || "",
+    datei_id:   row[COL.datei_id]  || "",
+    strasse:    strasse,
+    hausnummer: hausnr,
+    adresse:    hausnr ? `${strasse} ${hausnr}`.trim() : strasse,
+    ort:        row[COL.ort]       || "",
+    datum:      row[COL.datum]     || "",
+    pfad:       row[COL.pfad]      || "",
+    vorschau:   row[COL.vorschau]  || "",
+    original:   row[COL.original]  || "",
+    lat:        row[COL.lat]       || "",
+    lon:        row[COL.lon]       || "",
+    plz:        row[COL.plz]       || "",
   };
-}
-
-function thumbnailUrl(obj) {
-  // Bevorzuge die gespeicherte Vorschau-URL, alternativ Drive-Thumbnail
-  if (obj.vorschau && obj.vorschau.startsWith("http")) return obj.vorschau;
-  if (obj.datei_id) return `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w400`;
-  return "";
 }
 
 function vollbildUrl(obj) {
@@ -598,8 +585,6 @@ function driveUrl(obj) {
 }
 
 // ── Google Identity Services laden ───────────────────────────
-// gapi.js wird nicht mehr verwendet → kein COOP-Fehler mehr
-
 function gisGeladen() {
   if (CLIENT_ID === "HIER_IHRE_WEB_CLIENT_ID_EINTRAGEN") {
     setupHinweis.style.display = "block";
@@ -640,8 +625,6 @@ function abmelden() {
   google.accounts.oauth2.revoke(accessToken, () => {
     accessToken = null;
     alleZeilen  = [];
-    nutzerInfo.style.display = "flex";
-    loginBtn.style.display   = "block";
     nutzerInfo.style.display = "none";
     loginBtn.style.display   = "block";
     galerieBereich.style.display = "none";
@@ -657,22 +640,20 @@ async function sheetLaden() {
   loginScreen.style.display    = "none";
   galerieBereich.style.display = "none";
 
-  const BATCH = 5000; // Zeilen pro Abfrage
-  let startZeile = 2; // Überschrift in Zeile 1 überspringen
+  const BATCH = 5000;
+  let startZeile = 2;
   let gesamtGeladen = 0;
   alleZeilen = [];
 
   while (true) {
-    const bereich = `${SHEET_NAME}!A${startZeile}:J${startZeile + BATCH - 1}`;
+    const bereich = `${SHEET_NAME}!A${startZeile}:L${startZeile + BATCH - 1}`;
     setStatus(`Lade Daten … (${gesamtGeladen.toLocaleString("de")} geladen)`, "laden");
 
-    // Spinner zeigen
     const spinner = document.createElement("span");
     spinner.className = "spinner";
     statusBar.prepend(spinner);
 
     try {
-      // Direkte Sheets API via fetch (kein gapi nötig → keine COOP-Fehler)
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(bereich)}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.json()).error?.message || r.statusText}`);
@@ -697,7 +678,7 @@ async function sheetLaden() {
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
-const thumbCache = {};   // fileId → thumbnailLink URL
+const thumbCache = {};
 
 const thumbObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
@@ -719,7 +700,6 @@ function bildZeigen(img, url) {
     if (placeholder) placeholder.style.display = "none";
   };
   img.onerror = () => {
-    // Bild konnte nicht geladen werden → Platzhalter sichtbar lassen
     img.style.opacity = 0;
     if (placeholder) placeholder.style.display = "flex";
     console.warn("Thumbnail-Fehler:", img.src.substring(0, 80));
@@ -730,21 +710,17 @@ function bildZeigen(img, url) {
 async function ladeThumbnail(img, fileId) {
   if (!fileId) return;
 
-  // Kein Token → direkt Drive-Thumbnail versuchen (braucht Google-Cookies)
   if (!accessToken) {
-    const url = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
-    bildZeigen(img, url);
+    bildZeigen(img, `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`);
     return;
   }
 
-  // Cache-Treffer
   if (thumbCache[fileId]) {
     bildZeigen(img, thumbCache[fileId]);
     return;
   }
 
   try {
-    // Drive API → thumbnailLink (signierte CDN-URL, kein Auth nötig)
     const r = await fetch(
       `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`,
       { headers: { Authorization: `Bearer ${accessToken}` } }
@@ -761,22 +737,20 @@ async function ladeThumbnail(img, fileId) {
       }
     }
 
-    // Kein thumbnailLink oder API-Fehler → Drive-Thumbnail mit Token
     const fbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
     thumbCache[fileId] = fbUrl;
     bildZeigen(img, fbUrl);
 
   } catch (e) {
     console.warn("Drive API Fehler:", e.message);
-    const fbUrl = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
-    bildZeigen(img, fbUrl);
+    bildZeigen(img, `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`);
   }
 }
 
 // ── Galerie rendern ──────────────────────────────────────────
 function galerieAnzeigen(zeilen) {
   galerie.innerHTML = "";
-  const zeigeMax = Math.min(zeilen.length, 200); // Max. 200 Kacheln gleichzeitig
+  const zeigeMax = Math.min(zeilen.length, 200);
 
   if (zeilen.length === 0) {
     keineErgebnisse.style.display = "block";
@@ -802,16 +776,15 @@ function galerieAnzeigen(zeilen) {
     karte.dataset.idx    = i;
     karte.dataset.fileId = obj.datei_id;
 
+    const ortZeile = [obj.plz, obj.ort].filter(Boolean).join(" · ");
     karte.innerHTML = `
-      <img class="karte-bild" alt="${escHtml(obj.strasse)}"
-           style="opacity:0;transition:opacity .3s">
       <div class="karte-bild-wrapper">
-        <img class="karte-bild" alt="${escHtml(obj.strasse)}">
+        <img class="karte-bild" alt="${escHtml(obj.adresse)}">
         <div class="karte-bild-placeholder">📷</div>
       </div>
       <div class="karte-info">
-        <div class="karte-strasse" title="${escHtml(obj.strasse)}">${escHtml(obj.strasse || "(keine Straße)")}</div>
-        <div class="karte-ort">${escHtml(obj.ort)}</div>
+        <div class="karte-strasse" title="${escHtml(obj.adresse)}">${escHtml(obj.adresse || "(keine Straße)")}</div>
+        <div class="karte-ort">${escHtml(ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
         ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
@@ -830,7 +803,6 @@ function escHtml(s) {
     .replace(/>/g,"&gt;").replace(/"/g,"&quot;");
 }
 
-// Ordnerpfad kürzen: letzte 2 Ebenen anzeigen (z.B. "Humboldtstr. 62 / 2023.03")
 function kurzPfad(pfad) {
   if (!pfad) return "";
   const teile = pfad.split("/").filter(t => t.trim());
@@ -846,13 +818,13 @@ function suchen() {
     sortiertAnzeigen(aktiveSortierung);
     return;
   }
-  const begriffe = q.split(/\s+/); // Mehrere Wörter = UND-Suche
+  const begriffe = q.split(/\s+/);
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj = zeilenObjekt(row);
-    const text = [obj.strasse, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
+    const text = [obj.strasse, obj.hausnummer, obj.adresse, obj.ort, obj.plz, obj.pfad, obj.datum].join(" ").toLowerCase();
     return begriffe.every(b => text.includes(b));
   });
-  sortiertAnzeigen(aktiveSortierung); // Aktive Sortierung beibehalten
+  sortiertAnzeigen(aktiveSortierung);
 }
 
 suchfeld.addEventListener("input", () => {
@@ -867,17 +839,14 @@ suchfeld.addEventListener("keydown", e => {
 // ── Modal ────────────────────────────────────────────────────
 function modalOeffnen(obj) {
   aktivesZeilenObj = obj;
-  modalStrasse.textContent = obj.strasse || "(unbekannte Straße)";
-  modalMeta.textContent    = [obj.ort, obj.datum].filter(Boolean).join(" · ");
+  modalStrasse.textContent = obj.adresse || "(unbekannte Straße)";
+  const ortPlz = [obj.plz, obj.ort].filter(Boolean).join(" ");
+  modalMeta.textContent    = [ortPlz, obj.datum].filter(Boolean).join(" · ");
   modalPfad.textContent    = obj.pfad ? "📂 " + obj.pfad : "";
 
-  const vollUrl  = vollbildUrl(obj);
-  const driveU   = driveUrl(obj);
+  modalLinkVoll.href  = vollbildUrl(obj) || "#";
+  modalLinkDrive.href = driveUrl(obj)    || "#";
 
-  modalLinkVoll.href  = vollUrl  || "#";
-  modalLinkDrive.href = driveU   || "#";
-
-  // Bild laden – zuerst gecachten Thumbnail, dann Drive API
   modalBild.style.display = "none";
   modalLadetext.style.display = "block";
   modalLadetext.textContent = "Bild wird geladen …";
@@ -901,9 +870,8 @@ function modalOeffnen(obj) {
       .then(data => {
         const url = data.thumbnailLink;
         if (url) {
-          const big = url.replace(/=s\d+$/, "=s800");
           thumbCache[obj.datei_id] = url.replace(/=s\d+$/, "=s400");
-          zeigeModalBild(big);
+          zeigeModalBild(url.replace(/=s\d+$/, "=s800"));
         } else {
           modalLadetext.textContent = "Kein Vorschaubild verfügbar.";
         }
@@ -937,33 +905,29 @@ modalKopieren.addEventListener("click", () => {
   }).catch(() => { prompt("Link manuell kopieren:", url); });
 });
 
-// ── Datum parsen (DD.MM.YYYY → Zahl für Sortierung) ──────────
+// ── Datum parsen ──────────────────────────────────────────────
 function datumZuZahl(datumStr) {
   if (!datumStr) return 0;
   const t = datumStr.split(".");
   if (t.length !== 3) return 0;
-  // YYYY * 10000 + MM * 100 + DD → sortierbare Zahl
   return parseInt(t[2]) * 10000 + parseInt(t[1]) * 100 + parseInt(t[0]);
 }
 
 // ── Sortierung ────────────────────────────────────────────────
-let aktiveSortierung = ""; // "neu", "alt", ""
+let aktiveSortierung = "";
 
 function aktiveZeilen() {
-  // Wenn Suchfeld befüllt → gefilterte Zeilen verwenden (auch wenn leer = "keine Ergebnisse")
   if (suchfeld.value.trim()) return gefiltertZeilen;
   return alleZeilen;
 }
 
 function sortiertAnzeigen(sortierung) {
   aktiveSortierung = sortierung;
-
-  // Sortier-Buttons hervorheben
   document.getElementById("sort-neu").classList.toggle("aktiv", sortierung === "neu");
   document.getElementById("sort-alt").classList.toggle("aktiv", sortierung === "alt");
   document.getElementById("sort-reset").classList.toggle("aktiv", sortierung === "");
 
-  const basis = [...aktiveZeilen()]; // Kopie erstellen
+  const basis = [...aktiveZeilen()];
   if (sortierung === "neu") {
     basis.sort((a, b) => datumZuZahl(b[COL.datum]) - datumZuZahl(a[COL.datum]));
   } else if (sortierung === "alt") {

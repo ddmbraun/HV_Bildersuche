@@ -602,7 +602,7 @@ function gisGeladen() {
 
 function anmelden() {
   if (!tokenClient) return;
-  tokenClient.requestAccessToken({ prompt: "consent" });
+  tokenClient.requestAccessToken({ prompt: "" });
 }
 
 function tokenErhalten(response) {

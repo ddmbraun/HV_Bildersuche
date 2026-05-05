@@ -872,33 +872,48 @@ function modalOeffnen(obj) {
       modalLadetext.textContent = "Kein Vorschaubild verfuegbar."; return;
     }
     try {
-      // Thumbnail zuerst (schnell)
+      // Thumbnail-URL aus Drive API holen
       const r = await fetch(
         `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?fields=thumbnailLink`,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
       const data = await r.json();
+      // thumbnailLink ist eine CDN-URL (lh3.googleusercontent.com) – kein Auth-Header nötig
       const thumbUrl = data.thumbnailLink
         ? data.thumbnailLink.replace(/=s\d+$/, "=s1200")
-        : vollbildUrl(obj);
+        : null;
+      const ladeUrl = thumbUrl || vollbildUrl(obj);
 
-      // Als Blob laden (nötig für 360°-Erkennung und Pannellum)
-      const imgResp = await fetch(thumbUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-      if (!imgResp.ok) throw new Error("Bild nicht ladbar");
-      const blob    = await imgResp.blob();
-      const blobUrl = URL.createObjectURL(blob);
-      aktuelleBlobUrl = blobUrl;
-
+      // Direkt per img.src laden – funktioniert für CDN-URLs ohne CORS-Probleme
       modalBild.onload = () => {
         modalLadetext.style.display = "none";
         modalBild.style.display     = "block";
-        // 360°-Erkennung
+        // 360°-Erkennung anhand Seitenverhältnis
         if (modalBild.naturalWidth / modalBild.naturalHeight >= 1.9) {
           btn360.style.display = "inline-flex";
         }
       };
-      modalBild.onerror = () => { modalLadetext.textContent = "Bild konnte nicht geladen werden."; };
-      modalBild.src = blobUrl;
+      modalBild.onerror = () => {
+        // Fallback: Bild direkt über Drive API als Blob laden
+        fetch(`https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
+          { headers: { Authorization: `Bearer ${accessToken}` } })
+          .then(res => res.blob())
+          .then(blob => {
+            const url = URL.createObjectURL(blob);
+            aktuelleBlobUrl = url;
+            modalBild.onerror = () => { modalLadetext.textContent = "Bild konnte nicht geladen werden."; };
+            modalBild.onload = () => {
+              modalLadetext.style.display = "none";
+              modalBild.style.display     = "block";
+              if (modalBild.naturalWidth / modalBild.naturalHeight >= 1.9) {
+                btn360.style.display = "inline-flex";
+              }
+            };
+            modalBild.src = url;
+          })
+          .catch(() => { modalLadetext.textContent = "Bild konnte nicht geladen werden."; });
+      };
+      modalBild.src = ladeUrl;
 
     } catch(e) {
       modalLadetext.textContent = "Bild konnte nicht geladen werden.";
@@ -934,11 +949,47 @@ modalKopieren.addEventListener("click", () => {
 });
 
 // ── 360°-Viewer (Pannellum) ───────────────────────────────
-btn360.addEventListener("click", () => {
-  if (!aktuelleBlobUrl) return;
+btn360.addEventListener("click", async () => {
   modalBild.style.display     = "none";
   pannellumCont.style.display = "block";
   btn360.style.display        = "none";
+
+  // Blob-URL erst beim Klick laden (nötig für Pannellum CORS)
+  if (!aktuelleBlobUrl && aktivesObjekt) {
+    try {
+      // thumbnailLink nochmal holen
+      const r = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${aktivesObjekt.datei_id}?fields=thumbnailLink`,
+        { headers: { Authorization: `Bearer ${accessToken}` } }
+      );
+      const data = await r.json();
+      const thumbUrl = data.thumbnailLink
+        ? data.thumbnailLink.replace(/=s\d+$/, "=s1600")
+        : null;
+
+      if (thumbUrl) {
+        // CDN-URL – kein Authorization-Header erforderlich
+        const imgResp = await fetch(thumbUrl);
+        const blob = await imgResp.blob();
+        aktuelleBlobUrl = URL.createObjectURL(blob);
+      } else {
+        // Fallback: Drive API Direktdownload
+        const imgResp = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${aktivesObjekt.datei_id}?alt=media`,
+          { headers: { Authorization: `Bearer ${accessToken}` } }
+        );
+        const blob = await imgResp.blob();
+        aktuelleBlobUrl = URL.createObjectURL(blob);
+      }
+    } catch(e) {
+      pannellumCont.style.display = "none";
+      modalBild.style.display     = "block";
+      btn360.style.display        = "inline-flex";
+      return;
+    }
+  }
+
+  if (!aktuelleBlobUrl) return;
   pannellumViewer = pannellum.viewer(pannellumCont, {
     type:        "equirectangular",
     panorama:    aktuelleBlobUrl,

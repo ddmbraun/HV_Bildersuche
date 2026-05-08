@@ -809,6 +809,24 @@ function abmelden() {
 // ── localStorage-Cache ───────────────────────────────────────
 const CACHE_KEY = "hv_bild_cache_v1";
 
+function vorladenAlle(zeilen) {
+  // Alle Thumbnail-URLs still im Hintergrund vorladen (Browser-Cache waermen)
+  const fn = () => {
+    zeilen.forEach(row => {
+      const url = row[COL.vorschau] || '';
+      if (url && url.startsWith('http')) {
+        const img = new Image();
+        img.src = url;
+      }
+    });
+  };
+  if (typeof requestIdleCallback === 'function') {
+    requestIdleCallback(fn, { timeout: 8000 });
+  } else {
+    setTimeout(fn, 500);
+  }
+}
+
 function cacheSpeichern(zeilen) {
   try {
     const eintrag = { ts: Date.now(), zeilen };
@@ -848,6 +866,7 @@ async function sheetLaden(erzwingen = false) {
       suchfeld.focus();
       galerieBereich.style.display = "block";
       galerieAnzeigen(alleZeilen);
+      vorladenAlle(alleZeilen);
       return;
     }
   }
@@ -894,6 +913,7 @@ async function sheetLaden(erzwingen = false) {
   suchfeld.focus();
   galerieBereich.style.display = "block";
   galerieAnzeigen(alleZeilen);
+  vorladenAlle(alleZeilen);
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────

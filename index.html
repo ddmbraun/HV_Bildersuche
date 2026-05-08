@@ -4,6 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.css">
   <style>
     :root {
       --blau:    #1a73e8;
@@ -487,6 +488,27 @@
       .karte-bild-placeholder { display: none !important; }
     }
 
+    /* ── 360°-Viewer ────────────────────────────────────── */
+    #viewer-360 {
+      display: none;
+      width: 100%;
+      height: 100%;
+      min-height: 400px;
+      background: #111;
+    }
+    #viewer-360.aktiv { display: block; }
+    .modal-btn.grad360 {
+      background: linear-gradient(135deg, #1a73e8, #9c27b0);
+      color: #fff;
+      border-color: transparent;
+    }
+    .modal-btn.grad360:hover {
+      opacity: .88;
+    }
+    .modal-btn.grad360.aktiv {
+      background: #9c27b0;
+    }
+
     /* ── Keine Ergebnisse ────────────────────────────────── */
     #keine-ergebnisse {
       display: none;
@@ -639,12 +661,16 @@
     <div id="modal-bild-container">
       <span id="modal-ladetext">Bild wird geladen …</span>
       <img id="modal-bild" src="" alt="" style="display:none">
+      <div id="viewer-360"></div>
     </div>
     <div id="modal-pfad"></div>
     <div id="modal-footer">
       <a id="modal-link-vollbild" class="modal-btn primary" href="#" target="_blank">
         🔍 Vollbild öffnen
       </a>
+      <button id="modal-360-btn" class="modal-btn grad360" title="360°-Panorama-Ansicht">
+        🔄 360° Ansicht
+      </button>
       <button id="modal-download-btn" class="modal-btn">
         ⬇️ Herunterladen
       </button>
@@ -1013,15 +1039,9 @@ function modalOeffnen(obj) {
   document.body.style.overflow = "hidden";
 }
 
-function modalSchliessen() {
-  modalOverlay.classList.remove("aktiv");
-  document.body.style.overflow = "";
-  modalBild.src = "";
-}
-
-document.getElementById("modal-close").addEventListener("click", modalSchliessen);
+document.getElementById("modal-close").addEventListener("click", () => modalSchliessen());
 modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) modalSchliessen(); });
-document.addEventListener("keydown", e => { if (e.key === "Escape") modalSchliessen(); });
+document.addEventListener("keydown", e => { if (e.key === "Escape" && modalOverlay.classList.contains("aktiv")) modalSchliessen(); });
 
 modalKopieren.addEventListener("click", () => {
   if (!aktivesZeilenObj) return;
@@ -1243,6 +1263,78 @@ function filterLeisteZeigen() {
   document.getElementById("such-filter-leiste").classList.add("aktiv");
 }
 
+// ── 360°-Viewer (Pannellum) ──────────────────────────────────
+let pannellumViewer = null;
+let viewer360Aktiv  = false;
+
+const viewer360Container = document.getElementById("viewer-360");
+const modal360Btn        = document.getElementById("modal-360-btn");
+
+function viewer360Starten(bildUrl) {
+  // Vorhandene Instanz zerstören
+  if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
+
+  viewer360Container.classList.add("aktiv");
+  modalBild.style.display = "none";
+  modalLadetext.style.display = "none";
+  modal360Btn.classList.add("aktiv");
+  modal360Btn.textContent = "🖼️ Normal-Ansicht";
+  viewer360Aktiv = true;
+
+  pannellumViewer = pannellum.viewer("viewer-360", {
+    type:       "equirectangular",
+    panorama:   bildUrl,
+    autoLoad:   true,
+    showControls: true,
+    compass:    false,
+    mouseZoom:  true,
+    strings: {
+      loadButtonLabel:  "Klicken zum Laden",
+      loadingLabel:     "Wird geladen …",
+      bylineLabel:      "",
+      noPanoramaError:  "Kein 360°-Bild gefunden.",
+      fileAccessError:  "Bild konnte nicht geladen werden.",
+      fileTypeError:    "Dateiformat nicht unterstützt.",
+      sceneChangeErrorMsg: "",
+      sceneNoneError:   ""
+    }
+  });
+}
+
+function viewer360Stoppen() {
+  if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
+  viewer360Container.classList.remove("aktiv");
+  modal360Btn.classList.remove("aktiv");
+  modal360Btn.textContent = "🔄 360° Ansicht";
+  viewer360Aktiv = false;
+  // Normales Bild wieder zeigen
+  if (aktivesZeilenObj && aktivesZeilenObj.datei_id) {
+    modalBild.style.display = "block";
+    modalLadetext.style.display = "none";
+  }
+}
+
+modal360Btn.addEventListener("click", () => {
+  if (!aktivesZeilenObj) return;
+  if (viewer360Aktiv) {
+    viewer360Stoppen();
+    return;
+  }
+  // Hochauflösendes Bild für 360°-Viewer laden
+  // drive.google.com/thumbnail liefert leider max ~1600px – für echte 360°-Qualität
+  // brauchen wir das Original. Wir versuchen es mit sz=w4000 (größtmöglich).
+  const url = `https://drive.google.com/thumbnail?id=${aktivesZeilenObj.datei_id}&sz=w4000`;
+  viewer360Starten(url);
+});
+
+// Beim Schließen des Modals auch Viewer aufräumen
+function modalSchliessen() {
+  if (viewer360Aktiv) viewer360Stoppen();
+  modalOverlay.classList.remove("aktiv");
+  document.body.style.overflow = "";
+  modalBild.src = "";
+}
+
 // ── Event-Listener ───────────────────────────────────────────
 loginBtn.addEventListener("click", anmelden);
 loginScreenBtn.addEventListener("click", anmelden);
@@ -1251,6 +1343,7 @@ logoutBtn.addEventListener("click", abmelden);
 
 <!-- Nur noch GIS laden (gapi.js entfernt → keine COOP-Fehler mehr) -->
 <script async defer src="https://accounts.google.com/gsi/client" onload="gisGeladen()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pannellum/2.5.6/pannellum.js"></script>
 
 </body>
 </html>

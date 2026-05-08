@@ -443,6 +443,48 @@
       border-color: var(--blau);
     }
 
+    /* ── Sticky Ergebnis-Leiste */
+    #ergebnis-leiste {
+      position: sticky;
+      top: 64px;
+      z-index: 90;
+      background: var(--grau);
+      padding: 8px 0 10px;
+      margin-bottom: 4px;
+    }
+
+    /* ── GPS-Badge auf Karte */
+    .karte-badges {
+      position: absolute;
+      top: 7px; left: 7px;
+      display: flex; gap: 4px;
+      z-index: 5;
+    }
+    .karte-badge {
+      background: rgba(0,0,0,.52);
+      color: #fff;
+      border-radius: 4px;
+      font-size: .7rem;
+      padding: 2px 5px;
+      line-height: 1.4;
+      backdrop-filter: blur(2px);
+    }
+
+    /* ── Export Fortschritt */
+    #export-fortschritt {
+      display: none;
+      position: fixed;
+      bottom: 90px; left: 50%;
+      transform: translateX(-50%);
+      background: #303134; color: #fff;
+      border-radius: 12px;
+      padding: 10px 20px;
+      font-size: .85rem;
+      z-index: 400;
+      white-space: nowrap;
+      box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    }
+
     /* ── Druck / PDF ─────────────────────────────────────── */
     @media print {
       header, #status-bar, #login-screen, #auswahl-leiste,
@@ -588,9 +630,14 @@
   <span id="auswahl-anzahl">0 ausgewählt</span>
   <button class="auswahl-btn primary" id="auswahl-links-kopieren">📋 Drive-Links kopieren</button>
   <button class="auswahl-btn" id="auswahl-drive-oeffnen">📁 In Drive öffnen</button>
+  <button class="auswahl-btn" id="auswahl-zip">📦 ZIP herunterladen</button>
+  <button class="auswahl-btn" id="auswahl-pdf">🖨️ PDF erstellen</button>
   <button class="auswahl-btn" id="auswahl-alle">Alle auswählen</button>
   <button class="auswahl-btn" id="auswahl-leeren">✕ Auswahl leeren</button>
 </div>
+
+<!-- Export-Fortschritt -->
+<div id="export-fortschritt"></div>
 
 <!-- Modal -->
 <div id="modal-overlay">
@@ -919,10 +966,14 @@ function galerieAnzeigen(zeilen) {
     karte.dataset.idx    = i;
     karte.dataset.fileId = obj.datei_id;
 
+    const badges = [];
+    if (obj.lat && obj.lon) badges.push(`<span class="karte-badge" title="GPS: ${escHtml(obj.lat)}, ${escHtml(obj.lon)}">📍 GPS</span>`);
+    if (obj.pfad) badges.push(`<span class="karte-badge" title="${escHtml(obj.pfad)}">📂 Pfad</span>`);
     karte.innerHTML = `
       <div class="karte-bild-wrapper">
         <img class="karte-bild" alt="${escHtml(obj.adresse)}">
         <div class="karte-bild-placeholder">📷</div>
+        ${badges.length ? `<div class="karte-badges">${badges.join('')}</div>` : ''}
       </div>
       <div class="karte-info">
         <div class="karte-strasse" title="${escHtml(obj.adresse)}">${escHtml(obj.adresse || "(keine Straße)")}</div>
@@ -1142,7 +1193,6 @@ document.getElementById("auswahl-alle").addEventListener("click", () => {
   });
   auswahlAktualisieren();
 });
-
 document.getElementById("auswahl-leeren").addEventListener("click", () => {
   ausgewaehlteIds.clear();
   document.querySelectorAll(".karte.ausgewaehlt").forEach(k => k.classList.remove("ausgewaehlt"));
@@ -1158,20 +1208,113 @@ document.getElementById("auswahl-links-kopieren").addEventListener("click", () =
     const btn = document.getElementById("auswahl-links-kopieren");
     btn.textContent = `✓ ${ausgewaehlteIds.size} Link${ausgewaehlteIds.size !== 1 ? "s" : ""} kopiert!`;
     setTimeout(() => { btn.textContent = "📋 Drive-Links kopieren"; }, 2500);
-  }).catch(() => { prompt(`${ausgewaehlteIds.size} Drive-Links (manuell kopieren):`, links); });
+  }).catch(() => { prompt(`${ausgewaehlteIds.size} Drive-Links:`, links); });
 });
 
 document.getElementById("auswahl-drive-oeffnen").addEventListener("click", () => {
   if (ausgewaehlteIds.size === 0) return;
   if (ausgewaehlteIds.size > 10) {
-    if (!confirm(`${ausgewaehlteIds.size} Tabs öffnen? Das kann den Browser kurz ausbremsen.`)) return;
+    if (!confirm(`${ausgewaehlteIds.size} Tabs öffnen?`)) return;
   }
   [...ausgewaehlteIds].forEach(fid => {
     window.open(`https://drive.google.com/file/d/${fid}/view`, "_blank");
   });
 });
 
-// ── Druck-Vorbereitung: alle sichtbaren Bilder vorladen ──────
+// ── Fortschritt-Anzeige ─────────────────────────────────────
+const exportFortschritt = document.getElementById("export-fortschritt");
+function zeigeExportFortschritt(text) {
+  exportFortschritt.textContent = text;
+  exportFortschritt.style.display = "block";
+}
+function verbergeExportFortschritt() {
+  exportFortschritt.style.display = "none";
+}
+
+// ── ZIP-Download ─────────────────────────────────────────────
+async function zipHerunterladen() {
+  if (ausgewaehlteIds.size === 0) return;
+  if (!accessToken) { alert("Bitte zuerst anmelden."); return; }
+  const ids = [...ausgewaehlteIds];
+  const zip = new JSZip();
+  let ok = 0, fehler = 0;
+  for (let i = 0; i < ids.length; i++) {
+    const fid = ids[i];
+    zeigeExportFortschritt(`📦 Lade Bild ${i+1} von ${ids.length} …`);
+    try {
+      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`, {
+        headers: { Authorization: `Bearer ${accessToken}` }
+      });
+      if (!r.ok) throw new Error(r.status);
+      const blob = await r.blob();
+      const ct = blob.type || "image/jpeg";
+      const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : "jpg";
+      zip.file(`bild_${String(i+1).padStart(3,"0")}.${ext}`, blob);
+      ok++;
+    } catch(e) {
+      fehler++;
+      console.warn("ZIP-Fehler:", fid, e);
+    }
+  }
+  zeigeExportFortschritt("📦 ZIP wird erstellt …");
+  const blob = await zip.generateAsync({ type: "blob", compression: "STORE" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `hv-bilder-${ids.length}.zip`; a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+  verbergeExportFortschritt();
+  if (fehler > 0) alert(`${ok} geladen, ${fehler} Fehler.`);
+}
+
+// ── PDF-Export (nur Bilder) ──────────────────────────────────
+async function pdfErstellen() {
+  if (ausgewaehlteIds.size === 0) return;
+  const ids = [...ausgewaehlteIds];
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
+  const W = 210, H = 297, RAND = 8, COLS = 2, ROWS = 2, PRO_SEITE = 4;
+  const bW = (W - RAND * (COLS + 1)) / COLS;
+  const bH = (H - RAND * (ROWS + 1)) / ROWS;
+  for (let i = 0; i < ids.length; i++) {
+    zeigeExportFortschritt(`🖨️ Bild ${i+1} von ${ids.length} …`);
+    const pos = i % PRO_SEITE;
+    if (i > 0 && pos === 0) doc.addPage();
+    const col = pos % COLS;
+    const row = Math.floor(pos / COLS);
+    const x = RAND + col * (bW + RAND);
+    const y = RAND + row * (bH + RAND);
+    try {
+      const imgData = await ladeAlsDataUrl(
+        `https://drive.google.com/thumbnail?id=${ids[i]}&sz=w800`
+      );
+      doc.addImage(imgData, "JPEG", x, y, bW, bH, undefined, "FAST");
+    } catch(e) {
+      doc.setDrawColor(200); doc.rect(x, y, bW, bH);
+    }
+  }
+  verbergeExportFortschritt();
+  doc.save(`hv-bilder-${ids.length}.pdf`);
+}
+
+function ladeAlsDataUrl(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.crossOrigin = "anonymous";
+    img.onload = () => {
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      c.getContext("2d").drawImage(img, 0, 0);
+      resolve(c.toDataURL("image/jpeg", 0.82));
+    };
+    img.onerror = reject;
+    img.src = url;
+  });
+}
+
+document.getElementById("auswahl-zip").addEventListener("click", zipHerunterladen);
+document.getElementById("auswahl-pdf").addEventListener("click", pdfErstellen);
+
+// ── Druck-Vorbereitung ───────────────────────────────────────
 window.addEventListener("beforeprint", () => {
   document.querySelectorAll(".karte-bild").forEach(img => {
     if (!img.src || img.style.opacity === "0") {
@@ -1184,14 +1327,16 @@ window.addEventListener("beforeprint", () => {
   });
 });
 
-// ── Event-Listener ───────────────────────────────────────────
-loginBtn.addEventListener("click", anmelden);
-loginScreenBtn.addEventListener("click", anmelden);
-logoutBtn.addEventListener("click", abmelden);
+// ── Anmelden ─────────────────────────────────────────────────
+document.getElementById("login-btn").addEventListener("click", anmelden);
+document.getElementById("login-screen-btn").addEventListener("click", anmelden);
+document.getElementById("logout-btn").addEventListener("click", abmelden);
 </script>
 
-<!-- Nur noch GIS laden (gapi.js entfernt → keine COOP-Fehler mehr) -->
+<!-- GIS + JSZip + jsPDF -->
 <script async defer src="https://accounts.google.com/gsi/client" onload="gisGeladen()"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
 </body>
 </html>

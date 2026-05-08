@@ -1270,7 +1270,9 @@ let viewer360Aktiv  = false;
 const viewer360Container = document.getElementById("viewer-360");
 const modal360Btn        = document.getElementById("modal-360-btn");
 
-function viewer360Starten(bildUrl) {
+let blob360Url = null;
+
+function viewer360Starten(blobUrl) {
   // Vorhandene Instanz zerstören
   if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
 
@@ -1279,15 +1281,16 @@ function viewer360Starten(bildUrl) {
   modalLadetext.style.display = "none";
   modal360Btn.classList.add("aktiv");
   modal360Btn.textContent = "🖼️ Normal-Ansicht";
+  modal360Btn.disabled = false;
   viewer360Aktiv = true;
 
   pannellumViewer = pannellum.viewer("viewer-360", {
-    type:       "equirectangular",
-    panorama:   bildUrl,
-    autoLoad:   true,
+    type:         "equirectangular",
+    panorama:     blobUrl,   // Blob-URL = gleicher Ursprung → kein CORS-Problem
+    autoLoad:     true,
     showControls: true,
-    compass:    false,
-    mouseZoom:  true,
+    compass:      false,
+    mouseZoom:    true,
     strings: {
       loadButtonLabel:  "Klicken zum Laden",
       loadingLabel:     "Wird geladen …",
@@ -1303,28 +1306,45 @@ function viewer360Starten(bildUrl) {
 
 function viewer360Stoppen() {
   if (pannellumViewer) { pannellumViewer.destroy(); pannellumViewer = null; }
+  if (blob360Url) { URL.revokeObjectURL(blob360Url); blob360Url = null; }
   viewer360Container.classList.remove("aktiv");
   modal360Btn.classList.remove("aktiv");
   modal360Btn.textContent = "🔄 360° Ansicht";
   viewer360Aktiv = false;
-  // Normales Bild wieder zeigen
   if (aktivesZeilenObj && aktivesZeilenObj.datei_id) {
     modalBild.style.display = "block";
     modalLadetext.style.display = "none";
   }
 }
 
-modal360Btn.addEventListener("click", () => {
+modal360Btn.addEventListener("click", async () => {
   if (!aktivesZeilenObj) return;
-  if (viewer360Aktiv) {
-    viewer360Stoppen();
-    return;
+  if (viewer360Aktiv) { viewer360Stoppen(); return; }
+  if (!accessToken) { alert("Bitte zuerst anmelden."); return; }
+
+  modal360Btn.textContent = "⏳ Lädt …";
+  modal360Btn.disabled = true;
+  modalBild.style.display = "none";
+  modalLadetext.style.display = "block";
+  modalLadetext.textContent = "360°-Bild wird geladen …";
+
+  try {
+    // Drive API: CORS mit Auth-Header erlaubt → Bild als Blob laden
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${aktivesZeilenObj.datei_id}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    if (blob360Url) URL.revokeObjectURL(blob360Url);
+    blob360Url = URL.createObjectURL(blob); // gleicher Ursprung → Pannellum kann laden
+    modalLadetext.style.display = "none";
+    viewer360Starten(blob360Url);
+  } catch (e) {
+    modalLadetext.textContent = "360°-Bild konnte nicht geladen werden: " + e.message;
+    modal360Btn.textContent = "🔄 360° Ansicht";
+    modal360Btn.disabled = false;
   }
-  // Hochauflösendes Bild für 360°-Viewer laden
-  // drive.google.com/thumbnail liefert leider max ~1600px – für echte 360°-Qualität
-  // brauchen wir das Original. Wir versuchen es mit sz=w4000 (größtmöglich).
-  const url = `https://drive.google.com/thumbnail?id=${aktivesZeilenObj.datei_id}&sz=w4000`;
-  viewer360Starten(url);
 });
 
 // Beim Schließen des Modals auch Viewer aufräumen

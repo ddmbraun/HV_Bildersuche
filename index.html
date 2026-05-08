@@ -157,6 +157,34 @@
       transform: translateY(-1px);
     }
 
+    /* ── Such-Filter-Tabs ───────────────────────────────── */
+    #such-filter-leiste {
+      display: none;
+      background: var(--card-bg);
+      padding: 6px 20px;
+      gap: 6px;
+      border-bottom: 1px solid var(--grau2);
+      flex-wrap: wrap;
+    }
+    #such-filter-leiste.aktiv { display: flex; }
+    .filter-tab {
+      background: none;
+      border: 1px solid var(--grau2);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: .82rem;
+      color: var(--text2);
+      cursor: pointer;
+      transition: background .12s, border-color .12s, color .12s;
+      white-space: nowrap;
+    }
+    .filter-tab:hover { background: var(--grau2); }
+    .filter-tab.aktiv {
+      background: var(--blau);
+      color: #fff;
+      border-color: var(--blau);
+    }
+
     /* ── Galerie ─────────────────────────────────────────── */
     #galerie-bereich {
       display: none;
@@ -566,6 +594,13 @@
   </button>
 </div>
 
+<div id="such-filter-leiste">
+  <button class="filter-tab aktiv" data-filter="alle">🔍 Alle</button>
+  <button class="filter-tab" data-filter="adresse">🏠 Adresse</button>
+  <button class="filter-tab" data-filter="pfad">📂 Ordnerpfad</button>
+  <button class="filter-tab" data-filter="datum">📅 Datum</button>
+</div>
+
 <div id="galerie-bereich">
   <div id="ergebnis-leiste">
     <div id="ergebnis-info"></div>
@@ -584,7 +619,8 @@
 <!-- Auswahl-Aktionsleiste -->
 <div id="auswahl-leiste">
   <span id="auswahl-anzahl">0 ausgewählt</span>
-  <button class="auswahl-btn primary" id="auswahl-links-kopieren">📋 Drive-Links kopieren</button>
+  <button class="auswahl-btn primary" id="auswahl-herunterladen">⬇️ Herunterladen</button>
+  <button class="auswahl-btn" id="auswahl-links-kopieren">📋 Drive-Links kopieren</button>
   <button class="auswahl-btn" id="auswahl-drive-oeffnen">📁 In Drive öffnen</button>
   <button class="auswahl-btn" id="auswahl-alle">Alle auswählen</button>
   <button class="auswahl-btn" id="auswahl-leeren">✕ Auswahl leeren</button>
@@ -609,6 +645,9 @@
       <a id="modal-link-vollbild" class="modal-btn primary" href="#" target="_blank">
         🔍 Vollbild öffnen
       </a>
+      <button id="modal-download-btn" class="modal-btn">
+        ⬇️ Herunterladen
+      </button>
       <a id="modal-link-drive" class="modal-btn" href="#" target="_blank">
         📁 In Drive anzeigen
       </a>
@@ -798,6 +837,7 @@ async function sheetLaden() {
   suchfeld.disabled = false;
   suchfeld.focus();
   galerieBereich.style.display = "block";
+  filterLeisteZeigen();
   galerieAnzeigen(alleZeilen);
 }
 
@@ -916,8 +956,14 @@ function suchen() {
   const begriffe = q.split(/\s+/); // Mehrere Wörter = UND-Suche
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj = zeilenObjekt(row);
-    const text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
-    return begriffe.every(b => text.includes(b));
+    let text;
+    switch (aktiverFilter) {
+      case "adresse": text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort].join(" "); break;
+      case "pfad":    text = obj.pfad; break;
+      case "datum":   text = obj.datum; break;
+      default:        text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ");
+    }
+    return begriffe.every(b => text.toLowerCase().includes(b));
   });
   sortiertAnzeigen(aktiveSortierung); // Aktive Sortierung beibehalten
 }
@@ -1122,6 +1168,80 @@ window.addEventListener("beforeprint", () => {
     }
   });
 });
+
+// ── Download-Funktion ────────────────────────────────────────
+async function bildHerunterladen(fileId, dateiname) {
+  if (!fileId || !accessToken) return;
+  try {
+    const r = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!r.ok) throw new Error(`HTTP ${r.status}`);
+    const blob = await r.blob();
+    const ext  = blob.type.includes("png") ? ".png" : ".jpg";
+    const name = dateiname ? dateiname : `bild_${fileId}${ext}`;
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement("a");
+    a.href = url; a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    alert("Download fehlgeschlagen: " + e.message);
+  }
+}
+
+// Einzel-Download im Modal
+document.getElementById("modal-download-btn").addEventListener("click", async () => {
+  if (!aktivesZeilenObj) return;
+  const btn = document.getElementById("modal-download-btn");
+  btn.textContent = "⏳ Wird geladen …";
+  btn.disabled = true;
+  const name = (aktivesZeilenObj.adresse || aktivesZeilenObj.strasse || "bild")
+    .replace(/[/\\:*?"<>|]/g, "_") + "_" + (aktivesZeilenObj.datum || "") + ".jpg";
+  await bildHerunterladen(aktivesZeilenObj.datei_id, name);
+  btn.textContent = "⬇️ Herunterladen";
+  btn.disabled = false;
+});
+
+// Mehrfach-Download in der Auswahl-Leiste
+document.getElementById("auswahl-herunterladen").addEventListener("click", async () => {
+  if (ausgewaehlteIds.size === 0) return;
+  const ids = [...ausgewaehlteIds];
+  const btn = document.getElementById("auswahl-herunterladen");
+  if (ids.length > 20) {
+    if (!confirm(`${ids.length} Bilder herunterladen? Browser fragt ggf. nach Erlaubnis für mehrere Downloads.`)) return;
+  }
+  btn.disabled = true;
+  let i = 0;
+  for (const fid of ids) {
+    btn.textContent = `⏳ ${++i}/${ids.length} …`;
+    await bildHerunterladen(fid, `bild_${fid}.jpg`);
+    await new Promise(r => setTimeout(r, 400)); // kurze Pause zwischen Downloads
+  }
+  btn.textContent = `✓ ${ids.length} heruntergeladen`;
+  btn.disabled = false;
+  setTimeout(() => { btn.textContent = "⬇️ Herunterladen"; }, 3000);
+});
+
+// ── Such-Filter-Tabs ─────────────────────────────────────────
+let aktiverFilter = "alle"; // "alle" | "adresse" | "pfad" | "datum"
+
+document.querySelectorAll(".filter-tab").forEach(tab => {
+  tab.addEventListener("click", () => {
+    document.querySelectorAll(".filter-tab").forEach(t => t.classList.remove("aktiv"));
+    tab.classList.add("aktiv");
+    aktiverFilter = tab.dataset.filter;
+    suchen(); // Suche sofort neu auslösen
+  });
+});
+
+// Such-Filter-Leiste einblenden sobald Daten geladen
+function filterLeisteZeigen() {
+  document.getElementById("such-filter-leiste").classList.add("aktiv");
+}
 
 // ── Event-Listener ───────────────────────────────────────────
 loginBtn.addEventListener("click", anmelden);

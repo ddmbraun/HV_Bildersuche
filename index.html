@@ -106,6 +106,26 @@
     }
     #status-bar.laden { background: #e8f0fe; color: var(--blau); }
     #status-bar.fehler { background: #fce8e6; color: #d93025; }
+    #hv-token-warn {
+      display: none;
+      background: #ff9800;
+      color: #fff;
+      padding: 6px 24px;
+      font-size: .83rem;
+      font-weight: 600;
+      align-items: center;
+      gap: 12px;
+    }
+    #hv-token-warn.sichtbar { display: flex; }
+    #hv-token-warn button {
+      background: rgba(255,255,255,.25);
+      border: 1px solid rgba(255,255,255,.5);
+      color: #fff;
+      border-radius: 4px;
+      padding: 2px 10px;
+      cursor: pointer;
+      font-size: .8rem;
+    }
     .spinner {
       width: 14px; height: 14px;
       border: 2px solid currentColor;
@@ -242,25 +262,49 @@
       color: #bbb;
     }
     .karte-info {
-      padding: 10px 12px 12px;
+      padding: 6px 10px 6px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      cursor: pointer;
+      user-select: none;
     }
+    .karte-info-text { flex: 1; min-width: 0; }
     .karte-strasse {
       font-weight: 600;
-      font-size: .9rem;
+      font-size: .85rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--text);
     }
+    .karte-toggle {
+      font-size: .7rem;
+      color: var(--text2);
+      flex-shrink: 0;
+      transition: transform .2s;
+      padding: 2px;
+    }
+    .karte.ausgeklappt .karte-toggle { transform: rotate(180deg); }
+    .karte-details {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height .2s ease;
+      padding: 0 10px;
+    }
+    .karte.ausgeklappt .karte-details {
+      max-height: 160px;
+      padding: 0 10px 8px;
+    }
     .karte-ort {
-      font-size: .8rem;
+      font-size: .78rem;
       color: var(--text2);
       margin-top: 2px;
     }
     .karte-datum {
-      font-size: .75rem;
+      font-size: .72rem;
       color: #9aa0a6;
-      margin-top: 4px;
+      margin-top: 2px;
     }
     .karte-pfad {
       font-size: .72rem;
@@ -526,6 +570,20 @@
     }
 
     /* ── Druck / PDF ─────────────────────────────────────── */
+    /* ── Listenansicht ──────────────────────────────────────── */
+    #galerie.liste { display:flex; flex-direction:column; gap:6px; }
+    #galerie.liste .karte { display:flex; flex-direction:row; align-items:center; border-radius:8px; min-height:64px; }
+    #galerie.liste .karte-bild-wrapper { width:72px; min-width:72px; height:64px; aspect-ratio:unset; border-radius:8px 0 0 8px; flex-shrink:0; }
+    #galerie.liste .karte-bild-placeholder { font-size:1.4rem; }
+    #galerie.liste .karte-info { padding:6px 10px; flex:1; min-width:0; }
+    #galerie.liste .karte-toggle { display:none; }
+    #galerie.liste .karte-details { max-height:none !important; padding:0 10px 4px !important; overflow:visible; }
+    #galerie.liste .karte-strasse { font-size:.88rem; }
+    #galerie.liste .karte-ort, #galerie.liste .karte-datum { font-size:.75rem; margin-top:1px; }
+    #galerie.liste .karte-pfad { display:none; }
+    #galerie.liste .karte-badges { margin-top:2px; }
+    #galerie.liste .karte:hover { transform:none; }
+
     @media print {
       header, #status-bar, #login-screen, #auswahl-leiste,
       #ergebnis-leiste, #keine-ergebnisse, #modal-overlay { display: none !important; }
@@ -619,6 +677,7 @@
 <header>
   <h1>🏢 HV Bild-Suche</h1>
   <input type="search" id="suchfeld" placeholder="Straße, Ort oder Stichwort eingeben …" disabled>
+
   <button id="login-btn">Mit Google anmelden</button>
   <div id="nutzer-info">
     <img id="nutzer-bild" src="" alt="">
@@ -627,6 +686,10 @@
   </div>
 </header>
 
+<div id="hv-token-warn">
+  ⚠️ <span id="hv-token-warn-text">Google-Token läuft ab</span>
+  <button onclick="hvTokenErneuerung()">Jetzt erneuern</button>
+</div>
 <div id="status-bar">Bitte anmelden, um Bilder zu laden.</div>
 
 <div id="setup-hinweis">
@@ -654,6 +717,7 @@
     <button class="sort-btn" id="sort-neu" title="Neueste Bilder zuerst">📅 Neueste zuerst</button>
     <button class="sort-btn" id="sort-alt" title="Älteste Bilder zuerst">📅 Älteste zuerst</button>
     <button class="sort-btn" id="sort-reset" title="Ursprüngliche Reihenfolge">↺ Standard</button>
+    <button class="sort-btn" id="ansicht-btn" title="Listenansicht / Kachelansicht">☰ Liste</button>
     <button class="sort-btn" id="auswahl-modus-btn" title="Bilder auswählen">☑️ Auswählen</button>
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
@@ -695,6 +759,10 @@
       <div id="modal-header-text">
         <div id="modal-strasse"></div>
         <div id="modal-meta"></div>
+        <div id="modal-gps" style="font-size:.75rem;color:#9aa0a6;margin-top:3px;display:none">
+          📍 <span id="modal-gps-text"></span>
+          <a id="modal-gps-link" href="#" target="_blank" style="color:#1a73e8;margin-left:6px;text-decoration:none">Karte ↗</a>
+        </div>
       </div>
       <button id="modal-close" title="Schließen">✕</button>
     </div>
@@ -726,10 +794,12 @@
 <script>
 // ── Globale Variablen ────────────────────────────────────────
 let alleZeilen  = [];   // Alle Sheet-Zeilen
-let gefiltertZeilen = [];
-let tokenClient = null;
-let accessToken = null;
-let suchTimer   = null;
+let gefiltertZeilen  = [];
+let tokenClient    = null;
+let accessToken    = null;
+let tokenExpires   = 0;   // Ablaufzeitpunkt als Date.now()-ms
+let _hvWarnActive  = false;
+let suchTimer      = null;
 let aktivesZeilenObj = null;
 
 // ── DOM-Referenzen ───────────────────────────────────────────
@@ -831,10 +901,52 @@ function tokenErhalten(response) {
     setStatus("Anmeldung fehlgeschlagen: " + response.error, "fehler");
     return;
   }
-  accessToken = response.access_token;
+  accessToken  = response.access_token;
+  tokenExpires = Date.now() + (Number(response.expires_in || 3600) - 60) * 1000;
+  hvTokenWarnVerstecken();
   nutzerAnzeigen();
   sheetLaden();
 }
+
+function hvTokenErneuerung() {
+  if (!tokenClient) return;
+  tokenClient.callback = tokenErhalten;
+  tokenClient.requestAccessToken({ prompt: '' });
+}
+
+function hvTokenWarnZeigen(sekunden) {
+  const warn = document.getElementById('hv-token-warn');
+  const txt  = document.getElementById('hv-token-warn-text');
+  if (!warn) return;
+  const min = Math.ceil(sekunden / 60);
+  txt.textContent = 'Google-Token läuft in ' + min + ' Min. ab – bitte erneuern';
+  warn.classList.add('sichtbar');
+  _hvWarnActive = true;
+}
+
+function hvTokenWarnVerstecken() {
+  const warn = document.getElementById('hv-token-warn');
+  if (warn) warn.classList.remove('sichtbar');
+  _hvWarnActive = false;
+}
+
+// Jede Minute Token-Restzeit prüfen
+setInterval(function() {
+  if (!accessToken || !tokenExpires) return;
+  const msLeft = tokenExpires - Date.now();
+  if (msLeft <= 0) {
+    hvTokenWarnZeigen(0);
+    setStatus('⚠️ Google-Anmeldung abgelaufen – bitte oben erneuern.', 'fehler');
+  } else if (msLeft < 5 * 60 * 1000) {
+    // Stille Erneuerung versuchen
+    if (!_hvWarnActive) {
+      hvTokenWarnZeigen(msLeft / 1000);
+      try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) {}
+    }
+  } else {
+    hvTokenWarnVerstecken();
+  }
+}, 60000);
 
 function nutzerAnzeigen() {
   nutzerName.textContent   = "Angemeldet";
@@ -854,6 +966,7 @@ function abmelden() {
     loginScreen.style.display    = "flex";
     suchfeld.disabled = true;
     suchfeld.value    = "";
+    aktiverPfad = ""; aktiverOrt = "";
     setStatus("Abgemeldet.");
   });
 }
@@ -911,6 +1024,47 @@ function cacheInfoAnzeigen(ts) {
 }
 
 // ── Sheet-Daten laden ────────────────────────────────────────
+function dropdownsBefuellen() {
+  const pfadSel = document.getElementById("pfad-filter");
+  const ortSel  = document.getElementById("ort-filter");
+  if (!pfadSel || !ortSel) return;
+
+  // Einzigartige Ordner-Wurzeln (erste 2 Ebenen des Pfads)
+  const pfadSet = new Set();
+  const ortSet  = new Set();
+  alleZeilen.forEach(row => {
+    const obj = zeilenObjekt(row);
+    if (obj.pfad) {
+      const teile = obj.pfad.split("/").map(t => t.trim()).filter(Boolean);
+      if (teile.length >= 2) pfadSet.add(teile.slice(0, 2).join("/"));
+      else if (teile.length === 1) pfadSet.add(teile[0]);
+    }
+    if (obj.ort) ortSet.add(obj.ort.trim());
+  });
+
+  // Ordner-Dropdown
+  pfadSel.innerHTML = '<option value="">— Alle Ordner (' + alleZeilen.length.toLocaleString("de") + ') —</option>';
+  [...pfadSet].sort().forEach(p => {
+    const opt = document.createElement("option");
+    opt.value = p;
+    opt.textContent = p;
+    pfadSel.appendChild(opt);
+  });
+
+  // Ort-Dropdown
+  ortSel.innerHTML = '<option value="">— Alle Orte —</option>';
+  [...ortSet].sort().forEach(o => {
+    const opt = document.createElement("option");
+    opt.value = o.toLowerCase();
+    opt.textContent = o;
+    ortSel.appendChild(opt);
+  });
+
+  // Filter-Button und Leiste aktivieren
+  const filterBtn = document.getElementById("filter-btn");
+  if (filterBtn) filterBtn.disabled = false;
+}
+
 async function sheetLaden(erzwingen = false) {
   loginScreen.style.display    = "none";
 
@@ -924,8 +1078,14 @@ async function sheetLaden(erzwingen = false) {
       suchfeld.disabled = false;
       suchfeld.focus();
       galerieBereich.style.display = "block";
-      galerieAnzeigen(alleZeilen);
+      dropdownsBefuellen();
+      sortiertAnzeigen(aktiveSortierung);
       vorladenAlle(alleZeilen);
+      // Hintergrund-Refresh wenn Cache > 24h alt
+      const cacheAlterH = (Date.now() - cache.ts) / 3600000;
+      if (cacheAlterH > 24) {
+        setTimeout(() => sheetLaden(true), 3000); // nach 3 Sek. still aktualisieren
+      }
       return;
     }
   }
@@ -971,7 +1131,8 @@ async function sheetLaden(erzwingen = false) {
   suchfeld.disabled = false;
   suchfeld.focus();
   galerieBereich.style.display = "block";
-  galerieAnzeigen(alleZeilen);
+  dropdownsBefuellen();
+  sortiertAnzeigen(aktiveSortierung);
   vorladenAlle(alleZeilen);
 }
 
@@ -991,14 +1152,36 @@ const thumbObserver = new IntersectionObserver((entries) => {
   });
 }, { rootMargin: "800px" });
 
-function bildZeigen(img, url) {
-  const placeholder = img.parentElement.querySelector(".karte-bild-placeholder");
+// Authentifiziertes Bild-Laden via Drive API v3 → Blob → ObjectURL (kein CORS-Problem)
+async function ladeAlsBlobUrl(fileId) {
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const blob = await r.blob();
+  return URL.createObjectURL(blob);
+}
+
+function bildZeigen(img, url, fileId) {
+  const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
   img.onload  = () => {
     img.style.opacity = 1;
     if (placeholder) placeholder.style.display = "none";
   };
-  img.onerror = () => {
-    // Bild konnte nicht geladen werden → Platzhalter sichtbar lassen
+  img.onerror = async () => {
+    // Fallback: Drive API v3 mit Bearer-Token → kein CORS-Problem
+    if (fileId && accessToken && !img.dataset.apiFallback) {
+      img.dataset.apiFallback = "1";
+      try {
+        const blobUrl = await ladeAlsBlobUrl(fileId);
+        thumbCache[fileId] = blobUrl; // für spätere Aufrufe cachen
+        img.src = blobUrl;
+        return;
+      } catch(e) {
+        console.warn("API-Fallback fehlgeschlagen für", fileId, e.message);
+      }
+    }
     img.style.opacity = 0;
     if (placeholder) placeholder.style.display = "flex";
     console.warn("Thumbnail-Fehler:", img.src.substring(0, 80));
@@ -1007,13 +1190,15 @@ function bildZeigen(img, url) {
 }
 
 function ladeThumbnail(img, fileId) {
-  // Direkt drive.google.com/thumbnail verwenden – kein Authorization-Header nötig,
-  // kein CORS-Problem. Funktioniert solange der Nutzer in Google angemeldet ist.
   if (!fileId) return;
-  if (!thumbCache[fileId]) {
-    thumbCache[fileId] = `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`;
+  // Gecachte Blob-URL direkt verwenden (z.B. nach API-Fallback)
+  if (thumbCache[fileId]) {
+    bildZeigen(img, thumbCache[fileId], fileId);
+    return;
   }
-  bildZeigen(img, thumbCache[fileId]);
+  // Primär: drive.google.com/thumbnail (schnell, kein Auth-Header nötig)
+  // Bei Fehler: onerror-Fallback in bildZeigen() holt Blob via Drive API
+  bildZeigen(img, `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`, fileId);
 }
 
 // ── Galerie rendern ──────────────────────────────────────────
@@ -1061,7 +1246,12 @@ function galerieAnzeigen(zeilen) {
         ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
 
-    karte.addEventListener("click", () => modalOeffnen(obj));
+    // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal
+    karte.querySelector(".karte-info").addEventListener("click", e => {
+      e.stopPropagation();
+      karte.classList.toggle("ausgeklappt");
+    });
+    karte.querySelector(".karte-bild-wrapper").addEventListener("click", () => modalOeffnen(obj));
     thumbObserver.observe(karte);
     fragment.appendChild(karte);
   }
@@ -1085,24 +1275,12 @@ function kurzPfad(pfad) {
 
 // ── Suche ────────────────────────────────────────────────────
 function suchen() {
-  const q = suchfeld.value.trim().toLowerCase();
-  if (!q) {
-    gefiltertZeilen = [];
-    sortiertAnzeigen(aktiveSortierung);
-    return;
-  }
-  const begriffe = q.split(/\s+/); // Mehrere Wörter = UND-Suche
-  gefiltertZeilen = alleZeilen.filter(row => {
-    const obj = zeilenObjekt(row);
-    const text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
-    return begriffe.every(b => text.includes(b));
-  });
-  sortiertAnzeigen(aktiveSortierung); // Aktive Sortierung beibehalten
+  filterAnwenden();
 }
 
 suchfeld.addEventListener("input", () => {
   clearTimeout(suchTimer);
-  suchTimer = setTimeout(suchen, 280);
+  suchTimer = setTimeout(filterAnwenden, 280);
 });
 
 suchfeld.addEventListener("keydown", e => {
@@ -1114,6 +1292,19 @@ function modalOeffnen(obj) {
   aktivesZeilenObj = obj;
   modalStrasse.textContent = obj.adresse || obj.strasse || "(unbekannte Straße)";
   modalMeta.textContent    = [obj.ortZeile, obj.datum].filter(Boolean).join(" · ");
+  // GPS-Koordinaten anzeigen (direkt aus Sheet, kein Geocoding nötig)
+  const gpsDiv  = document.getElementById("modal-gps");
+  const gpsTxt  = document.getElementById("modal-gps-text");
+  const gpsLink = document.getElementById("modal-gps-link");
+  if (gpsDiv && obj.lat && obj.lon) {
+    const lat = parseFloat(obj.lat).toFixed(6);
+    const lon = parseFloat(obj.lon).toFixed(6);
+    gpsTxt.textContent = lat + ", " + lon;
+    gpsLink.href = "https://maps.google.com/?q=" + encodeURIComponent(obj.lat + "," + obj.lon);
+    gpsDiv.style.display = "block";
+  } else if (gpsDiv) {
+    gpsDiv.style.display = "none";
+  }
   modalPfad.textContent    = obj.pfad ? "📂 " + obj.pfad : "";
 
   const vollUrl  = vollbildUrl(obj);
@@ -1142,12 +1333,28 @@ function modalOeffnen(obj) {
         btn360.style.display = "none";
       }
     };
-    modalBild.onerror = () => { modalLadetext.textContent = "Bild konnte nicht geladen werden."; };
+    modalBild.onerror = async () => {
+      // Fallback: Drive API v3 mit Bearer-Token (löst CORS-Problem bei privaten Dateien)
+      if (obj.datei_id && accessToken && !modalBild.dataset.apiFallback) {
+        modalBild.dataset.apiFallback = "1";
+        modalLadetext.textContent = "Lade über Drive API …";
+        try {
+          const blobUrl = await ladeAlsBlobUrl(obj.datei_id);
+          modalBild.src = blobUrl;
+          return;
+        } catch(e) {
+          modalLadetext.textContent = "Fehler: " + e.message;
+          return;
+        }
+      }
+      modalLadetext.textContent = "Bild konnte nicht geladen werden.";
+    };
+    modalBild.dataset.apiFallback = "";
     modalBild.src = url;
   };
 
   if (obj.datei_id) {
-    // Großes Thumbnail direkt laden – kein Drive API Fetch, kein CORS-Problem
+    // Erst Thumbnail versuchen; bei CORS-Fehler → onerror lädt via Drive API
     const grossUrl = `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w1600`;
     zeigeModalBild(grossUrl);
   } else {
@@ -1187,12 +1394,30 @@ function datumZuZahl(datumStr) {
 }
 
 // ── Sortierung ────────────────────────────────────────────────
-let aktiveSortierung = ""; // "neu", "alt", ""
+let aktiveSortierung = "neu"; // Standard: Neueste zuerst
 
 function aktiveZeilen() {
-  // Wenn Suchfeld befüllt → gefilterte Zeilen verwenden (auch wenn leer = "keine Ergebnisse")
-  if (suchfeld.value.trim()) return gefiltertZeilen;
-  return alleZeilen;
+  let basis = (suchfeld.value.trim() || aktiverPfad || aktiverOrt) ? gefiltertZeilen : alleZeilen;
+  return basis;
+}
+
+function filterAnwenden() {
+  const q       = suchfeld.value.trim().toLowerCase();
+  const begriffe = q ? q.split(/\s+/) : [];
+  gefiltertZeilen = alleZeilen.filter(row => {
+    const obj  = zeilenObjekt(row);
+    const text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
+    const textOk  = begriffe.every(b => text.includes(b));
+    const pfadOk  = !aktiverPfad || (obj.pfad || "").startsWith(aktiverPfad);
+    const ortOk   = !aktiverOrt  || (obj.ort  || "").toLowerCase() === aktiverOrt;
+    return textOk && pfadOk && ortOk;
+  });
+  const info = document.getElementById("filter-info");
+  if (info) {
+    const aktiv = [aktiverPfad ? "Ordner" : "", aktiverOrt ? "Ort" : "", q ? "Suche" : ""].filter(Boolean);
+    info.textContent = aktiv.length ? "Aktiv: " + aktiv.join(", ") : "";
+  }
+  sortiertAnzeigen(aktiveSortierung);
 }
 
 function sortiertAnzeigen(sortierung) {
@@ -1212,9 +1437,38 @@ function sortiertAnzeigen(sortierung) {
   galerieAnzeigen(basis);
 }
 
+// Ansicht: Liste / Kacheln
+let aktiveAnsicht = localStorage.getItem("hv_ansicht") || "kacheln";
+
+function ansichtSetzen(ansicht) {
+  aktiveAnsicht = ansicht;
+  localStorage.setItem("hv_ansicht", ansicht);
+  const galEl = document.getElementById("galerie");
+  const btn   = document.getElementById("ansicht-btn");
+  if (ansicht === "liste") {
+    galEl.classList.add("liste");
+    btn.textContent = "⊞ Kacheln";
+    btn.title = "Zur Kachelansicht wechseln";
+  } else {
+    galEl.classList.remove("liste");
+    btn.textContent = "☰ Liste";
+    btn.title = "Zur Listenansicht wechseln";
+  }
+}
+
+document.getElementById("ansicht-btn").addEventListener("click", () => {
+  ansichtSetzen(aktiveAnsicht === "liste" ? "kacheln" : "liste");
+});
+
 document.getElementById("sort-neu").addEventListener("click", () => sortiertAnzeigen("neu"));
 document.getElementById("sort-alt").addEventListener("click", () => sortiertAnzeigen("alt"));
 document.getElementById("sort-reset").addEventListener("click", () => sortiertAnzeigen(""));
+
+// Gespeicherte Ansicht beim Start anwenden
+ansichtSetzen(aktiveAnsicht);
+
+// Ordner- und Ort-Filter
+
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {
@@ -1416,9 +1670,11 @@ document.getElementById("modal-btn-360").addEventListener("click", async () => {
   pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
 
   try {
-    // Vollbild-URL: Drive-Datei direkt über API laden (mit Auth-Token)
-    const url = obj.original || `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w4096`;
-    const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const blob = await resp.blob();
     if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
@@ -1435,20 +1691,23 @@ document.getElementById("modal-btn-360").addEventListener("click", async () => {
       strings:      { loadButtonLabel: "360° starten", loadingLabel: "Wird geladen …" },
     });
   } catch(e) {
-    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:40px">Fehler beim Laden: ${e.message}</div>`;
+    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:30px">Fehler beim Laden: ` + e.message + `</div>`;
   }
 });
 
-// ── Event-Listener ────────────────────────────────────────────
-document.getElementById("login-btn").addEventListener("click", anmelden);
-document.getElementById("login-screen-btn").addEventListener("click", anmelden);
-document.getElementById("logout-btn").addEventListener("click", abmelden);
 </script>
-
-<!-- GIS + JSZip + jsPDF -->
-<script async defer src="https://accounts.google.com/gsi/client" onload="gisGeladen()"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(reg => console.log('[SW] registriert:', reg.scope))
+      .catch(e  => console.warn('[SW] Fehler:', e));
+  });
+}
+</script>
 
 </body>
 </html>

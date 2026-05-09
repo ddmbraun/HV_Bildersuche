@@ -1456,6 +1456,9 @@ function ansichtSetzen(ansicht) {
   }
 }
 
+loginBtn.addEventListener("click", anmelden);
+loginScreenBtn.addEventListener("click", anmelden);
+
 document.getElementById("ansicht-btn").addEventListener("click", () => {
   ansichtSetzen(aktiveAnsicht === "liste" ? "kacheln" : "liste");
 });

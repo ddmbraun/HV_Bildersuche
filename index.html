@@ -2,6 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
@@ -898,7 +899,14 @@ function anmelden() {
 
 function tokenErhalten(response) {
   if (response.error) {
-    setStatus("Anmeldung fehlgeschlagen: " + response.error, "fehler");
+    if (response.error === 'immediate_failed' || response.error === 'interaction_required') {
+      // Silent-Refresh fehlgeschlagen (Third-Party-Cookies blockiert)
+      // Banner sichtbar lassen / zeigen, damit Nutzer manuell klickt
+      hvTokenWarnZeigen(0);
+      setStatus('⚠ Automatische Anmeldung fehlgeschlagen – bitte oben "Token erneuern" klicken.', 'fehler');
+    } else {
+      setStatus('Anmeldung fehlgeschlagen: ' + response.error, 'fehler');
+    }
     return;
   }
   accessToken  = response.access_token;
@@ -941,7 +949,7 @@ setInterval(function() {
     // Stille Erneuerung versuchen
     if (!_hvWarnActive) {
       hvTokenWarnZeigen(msLeft / 1000);
-      try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) {}
+      try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) { hvTokenWarnZeigen(0); }
     }
   } else {
     hvTokenWarnVerstecken();
@@ -1138,6 +1146,59 @@ async function sheetLaden(erzwingen = false) {
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
 const thumbCache = {};   // fileId → thumbnailLink URL
+
+// ── HV-Bild IndexedDB-Cache für Thumbnails ───────────────────────────────
+const HvThumbCache = {
+  _db: null,
+  async _open() {
+    if (this._db) return this._db;
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('hv-thumb-cache-v1', 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore('thumbs', { keyPath: 'id' });
+      req.onsuccess = e => { this._db = e.target.result; resolve(this._db); };
+      req.onerror = () => reject(req.error);
+    });
+  },
+  async get(fileId) {
+    try {
+      const db = await this._open();
+      return new Promise(resolve => {
+        const req = db.transaction('thumbs','readonly').objectStore('thumbs').get(fileId);
+        req.onsuccess = () => resolve(req.result || null);
+        req.onerror = () => resolve(null);
+      });
+    } catch(e) { return null; }
+  },
+  async put(fileId, dataUrl, modifiedTime) {
+    try {
+      const db = await this._open();
+      return new Promise(resolve => {
+        const tx = db.transaction('thumbs','readwrite');
+        tx.objectStore('thumbs').put({ id: fileId, dataUrl, modifiedTime: modifiedTime || '' });
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+      });
+    } catch(e) {}
+  }
+};
+// Gecachtes Thumbnail laden oder neu holen
+async function hvGetThumbCached(fileId, modifiedTime) {
+  if (!fileId) return null;
+  // In-Memory-Cache (thumbCache) zuerst
+  if (thumbCache[fileId]) return thumbCache[fileId];
+  // IndexedDB prüfen
+  const cached = await HvThumbCache.get(fileId);
+  if (cached && (!modifiedTime || cached.modifiedTime === modifiedTime)) {
+    thumbCache[fileId] = cached.dataUrl;
+    return cached.dataUrl;
+  }
+  return null;  // Kein Cache-Treffer
+}
+async function hvCacheThumb(fileId, dataUrl, modifiedTime) {
+  thumbCache[fileId] = dataUrl;
+  await HvThumbCache.put(fileId, dataUrl, modifiedTime || '');
+}
+
 
 const thumbObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {

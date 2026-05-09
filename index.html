@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
   <style>
     :root {
       --blau:    #1a73e8;
@@ -369,6 +371,44 @@
       border-color: var(--blau);
     }
     .modal-btn.primary:hover { background: var(--blau2); }
+    .modal-btn.btn360 { background: #1a2744; color: #fff; border-color: #1a2744; }
+    .modal-btn.btn360:hover { background: #0f1a30; }
+
+    /* Pannellum 360°-Overlay */
+    #pann-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: #000;
+      flex-direction: column;
+    }
+    #pann-overlay.aktiv { display: flex; }
+    #pann-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 16px;
+      background: rgba(0,0,0,.7);
+      color: #fff;
+      font-size: 14px;
+      font-weight: 600;
+      z-index: 10000;
+      flex-shrink: 0;
+    }
+    #pann-close {
+      background: rgba(255,255,255,.15);
+      border: none;
+      color: #fff;
+      border-radius: 6px;
+      padding: 6px 14px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    #pann-container {
+      flex: 1;
+      width: 100%;
+    }
     #modal-pfad {
       font-size: .75rem;
       color: #9aa0a6;
@@ -639,6 +679,15 @@
 <!-- Export-Fortschritt -->
 <div id="export-fortschritt"></div>
 
+<!-- Pannellum 360°-Overlay -->
+<div id="pann-overlay">
+  <div id="pann-header">
+    <span id="pann-titel">360°-Ansicht</span>
+    <button id="pann-close">✕ Schließen</button>
+  </div>
+  <div id="pann-container"></div>
+</div>
+
 <!-- Modal -->
 <div id="modal-overlay">
   <div id="modal-box">
@@ -658,6 +707,9 @@
       <a id="modal-link-vollbild" class="modal-btn primary" href="#" target="_blank">
         🔍 Vollbild öffnen
       </a>
+      <button id="modal-btn-360" class="modal-btn btn360" style="display:none">
+        🌐 360° anzeigen
+      </button>
       <a id="modal-link-drive" class="modal-btn" href="#" target="_blank">
         📁 In Drive anzeigen
       </a>
@@ -829,7 +881,14 @@ function vorladenAlle(zeilen) {
 
 function cacheSpeichern(zeilen) {
   try {
-    const eintrag = { ts: Date.now(), zeilen };
+    // Kompaktes Format: nur fileId → ThumbnailURL (spart ~90% Speicher)
+    const map = {};
+    zeilen.forEach(row => {
+      const fid = row[COL.datei_id];
+      const url = row[COL.vorschau];
+      if (fid && url) map[fid] = url;
+    });
+    const eintrag = { ts: Date.now(), map };
     localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
   } catch(e) {
     console.warn("Cache konnte nicht gespeichert werden:", e);
@@ -1068,8 +1127,21 @@ function modalOeffnen(obj) {
   modalLadetext.style.display = "block";
   modalLadetext.textContent = "Bild wird geladen …";
 
+  const btn360 = document.getElementById("modal-btn-360");
+  btn360.style.display = "none";
+
   const zeigeModalBild = (url) => {
-    modalBild.onload  = () => { modalLadetext.style.display = "none"; modalBild.style.display = "block"; };
+    modalBild.onload  = () => {
+      modalLadetext.style.display = "none";
+      modalBild.style.display = "block";
+      // 360°-Erkennung: Breite/Höhe ≈ 2:1
+      const ratio = modalBild.naturalWidth / modalBild.naturalHeight;
+      if (ratio >= 1.8 && ratio <= 2.2) {
+        btn360.style.display = "inline-flex";
+      } else {
+        btn360.style.display = "none";
+      }
+    };
     modalBild.onerror = () => { modalLadetext.textContent = "Bild konnte nicht geladen werden."; };
     modalBild.src = url;
   };
@@ -1307,47 +1379,67 @@ async function pdfErstellen() {
       const imgData = await ladeAlsDataUrl(
         `https://drive.google.com/thumbnail?id=${ids[i]}&sz=w800`
       );
-      doc.addImage(imgData, "JPEG", x, y, bW, bH, undefined, "FAST");
+      doc.addImage(imgData, "JPEG", x, y, bW, bH);
     } catch(e) {
-      doc.setDrawColor(200); doc.rect(x, y, bW, bH);
+      console.warn("PDF Bild übersprungen:", ids[i], e);
     }
   }
   verbergeExportFortschritt();
-  doc.save(`hv-bilder-${ids.length}.pdf`);
+  doc.save(`HV-Bilder-${new Date().toISOString().slice(0,10)}.pdf`);
 }
 
-function ladeAlsDataUrl(url) {
-  return new Promise((resolve, reject) => {
-    const img = new Image();
-    img.crossOrigin = "anonymous";
-    img.onload = () => {
-      const c = document.createElement("canvas");
-      c.width = img.naturalWidth; c.height = img.naturalHeight;
-      c.getContext("2d").drawImage(img, 0, 0);
-      resolve(c.toDataURL("image/jpeg", 0.82));
-    };
-    img.onerror = reject;
-    img.src = url;
-  });
-}
+// ── 360°-Viewer (Pannellum) ───────────────────────────────────
+let pannellumViewer = null;
+let aktuelleBlobUrl = null;
 
-document.getElementById("auswahl-zip").addEventListener("click", zipHerunterladen);
-document.getElementById("auswahl-pdf").addEventListener("click", pdfErstellen);
+const pannOverlay  = document.getElementById("pann-overlay");
+const pannContainer = document.getElementById("pann-container");
+const pannTitel    = document.getElementById("pann-titel");
 
-// ── Druck-Vorbereitung ───────────────────────────────────────
-window.addEventListener("beforeprint", () => {
-  document.querySelectorAll(".karte-bild").forEach(img => {
-    if (!img.src || img.style.opacity === "0") {
-      const karte = img.closest(".karte");
-      if (karte && karte.dataset.fileId) {
-        img.src = `https://drive.google.com/thumbnail?id=${karte.dataset.fileId}&sz=w400`;
-        img.style.opacity = "1";
-      }
-    }
-  });
+document.getElementById("pann-close").addEventListener("click", () => {
+  pannOverlay.classList.remove("aktiv");
+  document.body.style.overflow = "";
+  if (pannellumViewer) { try { pannellumViewer.destroy(); } catch(e){} pannellumViewer = null; }
+  if (aktuelleBlobUrl) { URL.revokeObjectURL(aktuelleBlobUrl); aktuelleBlobUrl = null; }
+  pannContainer.innerHTML = "";
 });
 
-// ── Anmelden ─────────────────────────────────────────────────
+document.getElementById("modal-btn-360").addEventListener("click", async () => {
+  if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
+  const obj = aktivesZeilenObj;
+
+  // Modal schließen, Overlay öffnen
+  modalSchliessen();
+  pannOverlay.classList.add("aktiv");
+  document.body.style.overflow = "hidden";
+  pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ 360°-Bild wird geladen …</div>';
+  pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
+
+  try {
+    // Vollbild-URL: Drive-Datei direkt über API laden (mit Auth-Token)
+    const url = obj.original || `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w4096`;
+    const resp = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const blob = await resp.blob();
+    if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
+    aktuelleBlobUrl = URL.createObjectURL(blob);
+
+    pannContainer.innerHTML = "";
+    pannellumViewer = pannellum.viewer(pannContainer, {
+      type:         "equirectangular",
+      panorama:     aktuelleBlobUrl,
+      autoLoad:     true,
+      showZoomCtrl: true,
+      mouseZoom:    true,
+      hfov:         100,
+      strings:      { loadButtonLabel: "360° starten", loadingLabel: "Wird geladen …" },
+    });
+  } catch(e) {
+    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:40px">Fehler beim Laden: ${e.message}</div>`;
+  }
+});
+
+// ── Event-Listener ────────────────────────────────────────────
 document.getElementById("login-btn").addEventListener("click", anmelden);
 document.getElementById("login-screen-btn").addEventListener("click", anmelden);
 document.getElementById("logout-btn").addEventListener("click", abmelden);

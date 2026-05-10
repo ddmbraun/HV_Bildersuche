@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
@@ -1222,13 +1222,14 @@ async function hvCacheThumb(fileId, dataUrl, modifiedTime) {
 const thumbObserver = new IntersectionObserver((entries) => {
   entries.forEach(entry => {
     if (!entry.isIntersecting) return;
-    const karte  = entry.target;
-    const fileId = karte.dataset.fileId;
-    const img    = karte.querySelector(".karte-bild");
+    const karte    = entry.target;
+    const fileId   = karte.dataset.fileId;
+    const vorschau = karte.dataset.vorschau || '';
+    const img      = karte.querySelector(".karte-bild");
     if (!img || img.dataset.loaded) return;
     img.dataset.loaded = "1";
     thumbObserver.unobserve(karte);
-    ladeThumbnail(img, fileId);
+    ladeThumbnail(img, fileId, vorschau);
   });
 }, { rootMargin: "800px" });
 
@@ -1269,16 +1270,40 @@ function bildZeigen(img, url, fileId) {
   img.src = url;
 }
 
-function ladeThumbnail(img, fileId) {
+async function ladeThumbnail(img, fileId, vorschauUrl) {
   if (!fileId) return;
-  // Gecachte Blob-URL direkt verwenden (z.B. nach API-Fallback)
+
+  // 1. In-Memory-Cache
   if (thumbCache[fileId]) {
     bildZeigen(img, thumbCache[fileId], fileId);
     return;
   }
-  // Primär: drive.google.com/thumbnail (schnell, kein Auth-Header nötig)
-  // Bei Fehler: onerror-Fallback in bildZeigen() holt Blob via Drive API
-  bildZeigen(img, `https://drive.google.com/thumbnail?id=${fileId}&sz=w400`, fileId);
+
+  // 2. IndexedDB-Cache prüfen
+  const cached = await hvGetThumbCached(fileId);
+  if (cached) {
+    thumbCache[fileId] = cached;
+    img.src = cached;
+    img.onload = () => { img.style.opacity = 1; const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder'); if(ph) ph.style.display='none'; };
+    return;
+  }
+
+  // 3. Vorschau-URL aus Sheet verwenden (lh3.googleusercontent.com – schnell, kein CORS)
+  if (vorschauUrl && vorschauUrl.startsWith('http')) {
+    bildZeigen(img, vorschauUrl, fileId);
+    return;
+  }
+
+  // 4. Fallback: Drive API mit Bearer-Token → Blob-URL (immer korrekt, langsamer)
+  if (accessToken) {
+    try {
+      const blobUrl = await ladeAlsBlobUrl(fileId);
+      await hvCacheThumb(fileId, blobUrl, '');
+      thumbCache[fileId] = blobUrl;
+      img.src = blobUrl;
+      img.onload = () => { img.style.opacity = 1; const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder'); if(ph) ph.style.display='none'; };
+    } catch(e) { console.warn('[HV] Thumbnail fehlgeschlagen:', fileId, e.message); }
+  }
 }
 
 // ── Galerie rendern ──────────────────────────────────────────
@@ -1308,7 +1333,8 @@ function galerieAnzeigen(zeilen) {
     const karte = document.createElement("div");
     karte.className      = "karte";
     karte.dataset.idx    = i;
-    karte.dataset.fileId = obj.datei_id;
+    karte.dataset.fileId  = obj.datei_id;
+    karte.dataset.vorschau = obj.vorschau || '';
 
     const badges = [];
     if (obj.lat && obj.lon) badges.push(`<span class="karte-badge" title="GPS: ${escHtml(obj.lat)}, ${escHtml(obj.lon)}">📍 GPS</span>`);
@@ -1785,9 +1811,9 @@ document.getElementById("modal-btn-360").addEventListener("click", async () => {
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(function(e){ console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message); })
-      .then(reg => console.log('[SW] registriert:', reg.scope))
-      .catch(e  => console.warn('[SW] Fehler:', e));
+    navigator.serviceWorker.register('./sw.js')
+      .then(function(reg){ console.log('[SW] registriert:', reg.scope); })
+      .catch(function(e){ console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message); });
   });
 }
 </script>

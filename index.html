@@ -1033,14 +1033,26 @@ function vorladenAlle(zeilen) {
 }
 
 function cacheSpeichern(zeilen) {
+  // Kompaktes Format: fileId → ThumbnailURL (für Desktop/Mobile)
+  const map = {};
+  zeilen.forEach(row => {
+    const fid = row[COL.datei_id];
+    const url = row[COL.vorschau];
+    if (fid && url) map[fid] = url;
+  });
+
+  // Vollformat: map + zeilen (damit sheetLaden() den Cache nutzen kann)
   try {
-    // Kompaktes Format: nur fileId → ThumbnailURL (spart ~90% Speicher)
-    const map = {};
-    zeilen.forEach(row => {
-      const fid = row[COL.datei_id];
-      const url = row[COL.vorschau];
-      if (fid && url) map[fid] = url;
-    });
+    const eintrag = { ts: Date.now(), map, zeilen };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
+    return; // Erfolg – fertig
+  } catch(e) {
+    // localStorage voll (QuotaExceededError) → Fallback auf kompaktes Format
+    console.warn("Cache (vollständig) konnte nicht gespeichert werden, speichere kompaktes Format:", e);
+  }
+
+  // Fallback: nur map speichern (kein zeilen – sheetLaden muss dann neu laden)
+  try {
     const eintrag = { ts: Date.now(), map };
     localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
   } catch(e) {
@@ -1891,4 +1903,4 @@ if ('serviceWorker' in navigator) {
 </script>
 
 </body>
-</html>
+</html>                                                                   

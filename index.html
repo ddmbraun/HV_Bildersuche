@@ -2,10 +2,11 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' https://*.googleapis.com https://accounts.google.com https://www.googleapis.com; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
+  <script src="https://accounts.google.com/gsi/client" defer onload="gisGeladen()"></script>
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
   <style>
     :root {
@@ -889,6 +890,20 @@ function gisGeladen() {
     client_id: CLIENT_ID,
     scope:     SCOPES,
     callback:  tokenErhalten,
+    error_callback: function(err) {
+      if (!err) return;
+      if (err.type === 'popup_failed_to_open') {
+        setStatus('⚠ Popup blockiert – bitte Popup-Blocker für diese Seite deaktivieren.', 'fehler');
+        hvTokenWarnZeigen(0);
+      } else if (err.type === 'popup_closed') {
+        setStatus('ℹ Anmeldefenster geschlossen – bitte erneut auf „Anmelden" klicken.', 'fehler');
+      } else if (err.type === 'immediate_failed') {
+        setStatus('⚠ Automatische Anmeldung fehlgeschlagen – bitte auf „Anmelden" klicken.', 'fehler');
+        hvTokenWarnZeigen(0);
+      } else {
+        setStatus('⚠ Google-Fehler: ' + (err.type || 'unbekannt'), 'fehler');
+      }
+    }
   });
 }
 

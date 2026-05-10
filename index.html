@@ -909,7 +909,10 @@ function gisGeladen() {
 
 function anmelden() {
   if (!tokenClient) return;
-  tokenClient.requestAccessToken({ prompt: "" });
+  var opts = {};
+  var hint = localStorage.getItem('hv_user_email_v1') || '';
+  if (hint) opts.login_hint = hint;
+  tokenClient.requestAccessToken(opts);
 }
 
 function tokenErhalten(response) {
@@ -927,6 +930,13 @@ function tokenErhalten(response) {
   accessToken  = response.access_token;
   tokenExpires = Date.now() + (Number(response.expires_in || 3600) - 60) * 1000;
   hvTokenWarnVerstecken();
+  // E-Mail für login_hint speichern (verhindert Konto-Dialog bei nächstem Besuch)
+  if (!localStorage.getItem('hv_user_email_v1')) {
+    fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + accessToken } })
+      .then(function(r) { return r.json(); })
+      .then(function(u) { if (u.email) try { localStorage.setItem('hv_user_email_v1', u.email); } catch(e) {} })
+      .catch(function() {});
+  }
   nutzerAnzeigen();
   sheetLaden();
 }
@@ -934,7 +944,10 @@ function tokenErhalten(response) {
 function hvTokenErneuerung() {
   if (!tokenClient) return;
   tokenClient.callback = tokenErhalten;
-  tokenClient.requestAccessToken({ prompt: '' });
+  var opts = {};
+  var hint = localStorage.getItem('hv_user_email_v1') || '';
+  if (hint) opts.login_hint = hint;
+  tokenClient.requestAccessToken(opts);
 }
 
 function hvTokenWarnZeigen(sekunden) {
@@ -1800,9 +1813,7 @@ async function pdfErstellen() {
     const x = RAND + col * (bW + RAND);
     const y = RAND + row * (bH + RAND);
     try {
-      const imgData = await ladeAlsDataUrl(
-        `https://drive.google.com/thumbnail?id=${ids[i]}&sz=w800`
-      );
+      const imgData = await ladeAlsDataUrl(ids[i]);
       doc.addImage(imgData, "JPEG", x, y, bW, bH);
     } catch(e) {
       console.warn("PDF Bild übersprungen:", ids[i], e);

@@ -1244,6 +1244,22 @@ async function ladeAlsBlobUrl(fileId) {
   return URL.createObjectURL(blob);
 }
 
+// Wie ladeAlsBlobUrl, aber gibt persistente Base64-Data-URL zurück (für IndexedDB-Caching)
+async function ladeAlsDataUrl(fileId) {
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const blob = await r.blob();
+  return new Promise((resolve, reject) => {
+    const fr = new FileReader();
+    fr.onload = () => resolve(fr.result);
+    fr.onerror = () => reject(new Error("FileReader-Fehler"));
+    fr.readAsDataURL(blob);
+  });
+}
+
 function bildZeigen(img, url, fileId) {
   const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
   img.onload  = () => {
@@ -1273,35 +1289,58 @@ function bildZeigen(img, url, fileId) {
 async function ladeThumbnail(img, fileId, vorschauUrl) {
   if (!fileId) return;
 
+  const zeigeThumb = (url) => {
+    img.onload = () => {
+      img.style.opacity = 1;
+      const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+      if (ph) ph.style.display = 'none';
+    };
+    img.onerror = async () => {
+      // Fallback: Drive API mit Bearer-Token → persistente Data-URL
+      if (fileId && accessToken && !img.dataset.apiFallback) {
+        img.dataset.apiFallback = "1";
+        try {
+          const dataUrl = await ladeAlsDataUrl(fileId);
+          await hvCacheThumb(fileId, dataUrl, '');
+          thumbCache[fileId] = dataUrl;
+          img.src = dataUrl;
+          return;
+        } catch(e2) { console.warn('[HV] Drive-API-Fallback fehlgeschlagen:', fileId, e2.message); }
+      }
+      img.style.opacity = 0;
+      const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+      if (ph) ph.style.display = 'flex';
+    };
+    img.src = url;
+  };
+
   // 1. In-Memory-Cache
   if (thumbCache[fileId]) {
-    bildZeigen(img, thumbCache[fileId], fileId);
+    zeigeThumb(thumbCache[fileId]);
     return;
   }
 
-  // 2. IndexedDB-Cache prüfen
+  // 2. IndexedDB-Cache (nur data: URLs – blob: URLs sind nach Reload ungültig)
   const cached = await hvGetThumbCached(fileId);
-  if (cached) {
+  if (cached && cached.startsWith('data:')) {
     thumbCache[fileId] = cached;
-    img.src = cached;
-    img.onload = () => { img.style.opacity = 1; const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder'); if(ph) ph.style.display='none'; };
+    zeigeThumb(cached);
     return;
   }
 
-  // 3. Vorschau-URL aus Sheet verwenden (lh3.googleusercontent.com – schnell, kein CORS)
+  // 3. Vorschau-URL aus Sheet (schnell, mit automatischem Fallback bei Fehler)
   if (vorschauUrl && vorschauUrl.startsWith('http')) {
-    bildZeigen(img, vorschauUrl, fileId);
+    zeigeThumb(vorschauUrl);
     return;
   }
 
-  // 4. Fallback: Drive API mit Bearer-Token → Blob-URL (immer korrekt, langsamer)
+  // 4. Letzter Ausweg: Drive API direkt → Data-URL
   if (accessToken) {
     try {
-      const blobUrl = await ladeAlsBlobUrl(fileId);
-      await hvCacheThumb(fileId, blobUrl, '');
-      thumbCache[fileId] = blobUrl;
-      img.src = blobUrl;
-      img.onload = () => { img.style.opacity = 1; const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder'); if(ph) ph.style.display='none'; };
+      const dataUrl = await ladeAlsDataUrl(fileId);
+      await hvCacheThumb(fileId, dataUrl, '');
+      thumbCache[fileId] = dataUrl;
+      zeigeThumb(dataUrl);
     } catch(e) { console.warn('[HV] Thumbnail fehlgeschlagen:', fileId, e.message); }
   }
 }
@@ -1459,9 +1498,31 @@ function modalOeffnen(obj) {
     modalBild.src = url;
   };
 
-  if (obj.datei_id) {
-    // Erst Thumbnail versuchen; bei CORS-Fehler → onerror lädt via Drive API
-    const grossUrl = `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w1600`;
+  if (obj.datei_id && accessToken) {
+    // Direkt via Drive API laden (Bearer-Token) – zuverlässig für private Dateien
+    modalLadetext.textContent = "Bild wird geladen …";
+    // Vorschau-Bild schnell als Platzhalter zeigen während das Vollbild lädt
+    if (obj.vorschau && obj.vorschau.startsWith('http')) {
+      modalBild.style.opacity = '0.4';
+      modalBild.style.display = 'block';
+      modalBild.src = obj.vorschau;
+      modalLadetext.style.display = "none";
+    }
+    ladeAlsBlobUrl(obj.datei_id).then(blobUrl => {
+      modalBild.dataset.apiFallback = "";
+      modalBild.style.opacity = '1';
+      zeigeModalBild(blobUrl);
+    }).catch(e => {
+      // Fallback: Vorschau-URL direkt zeigen
+      if (obj.vorschau && obj.vorschau.startsWith('http')) {
+        zeigeModalBild(obj.vorschau);
+      } else {
+        modalLadetext.textContent = "Fehler beim Laden: " + e.message;
+      }
+    });
+  } else if (obj.datei_id) {
+    // Kein Token → Vorschau-URL als Fallback
+    const grossUrl = obj.vorschau || `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w1600`;
     zeigeModalBild(grossUrl);
   } else {
     modalLadetext.textContent = "Kein Vorschaubild verfügbar.";

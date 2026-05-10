@@ -1180,7 +1180,8 @@ async function hvPreloaderStart(zeilen) {
       if (vorschauUrl && vorschauUrl.startsWith('http')) {
         await hvCacheThumb(id, vorschauUrl, '');
       } else {
-        const dataUrl = await ladeAlsDataUrl(id);
+        // Kein vorschauUrl → verkleinert von Drive laden (max. 400px, ~25 KB)
+        const dataUrl = await ladeAlsThumbDataUrl(id);
         await hvCacheThumb(id, dataUrl, '');
       }
       geladen++;
@@ -1229,30 +1230,18 @@ function vorladenAlle(zeilen) {
 }
 
 function cacheSpeichern(zeilen) {
-  // Kompaktes Format: fileId → ThumbnailURL (für Desktop/Mobile)
+  // Nur map speichern (fileId → ThumbnailURL) — zeilen werden immer frisch von der API geladen.
+  // Kein zeilen-Vollformat: würde localStorage (5–10 MB Limit) zum Überlaufen bringen.
   const map = {};
   zeilen.forEach(row => {
     const fid = row[COL.datei_id];
     const url = row[COL.vorschau];
     if (fid && url) map[fid] = url;
   });
-
-  // Vollformat: map + zeilen (damit sheetLaden() den Cache nutzen kann)
   try {
-    const eintrag = { ts: Date.now(), map, zeilen };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
-    return; // Erfolg – fertig
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map }));
   } catch(e) {
-    // localStorage voll (QuotaExceededError) → Fallback auf kompaktes Format
-    console.warn("Cache (vollständig) konnte nicht gespeichert werden, speichere kompaktes Format:", e);
-  }
-
-  // Fallback: nur map speichern (kein zeilen – sheetLaden muss dann neu laden)
-  try {
-    const eintrag = { ts: Date.now(), map };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
-  } catch(e) {
-    console.warn("Cache konnte nicht gespeichert werden:", e);
+    console.warn('[HV] Thumbnail-Map konnte nicht im localStorage gespeichert werden:', e.name);
   }
 }
 
@@ -1316,25 +1305,11 @@ function dropdownsBefuellen() {
 async function sheetLaden(erzwingen = false) {
   loginScreen.style.display    = "none";
 
-  // Cache prüfen — nur verwenden wenn nicht erzwungen
+  // Thumbnail-Map aus localStorage vorladen (für schnelle Anzeige während API lädt)
   if (!erzwingen) {
     const cache = cacheLaden();
-    if (cache && cache.zeilen && cache.zeilen.length > 0) {
-      alleZeilen = cache.zeilen;
-      setStatus(`✓ ${alleZeilen.length.toLocaleString("de")} Bilder (aus Cache) — Suchfeld aktiv.`);
-      cacheInfoAnzeigen(cache.ts);
-      suchfeld.disabled = false;
-      suchfeld.focus();
-      galerieBereich.style.display = "block";
-      dropdownsBefuellen();
-      sortiertAnzeigen(aktiveSortierung);
-      vorladenAlle(alleZeilen);
-      // Hintergrund-Refresh wenn Cache > 24h alt
-      const cacheAlterH = (Date.now() - cache.ts) / 3600000;
-      if (cacheAlterH > 24) {
-        setTimeout(() => sheetLaden(true), 3000); // nach 3 Sek. still aktualisieren
-      }
-      return;
+    if (cache && cache.map) {
+      Object.assign(thumbCache, cache.map); // URL-Map vorab in thumbCache eintragen
     }
   }
 
@@ -1483,6 +1458,41 @@ async function ladeAlsDataUrl(fileId) {
   });
 }
 
+// Wie ladeAlsDataUrl, aber verkleinert das Bild auf max. 400px und komprimiert als JPEG.
+// Für Thumbnail-Caching: spart bis zu 99% Speicher gegenüber dem Original.
+async function ladeAlsThumbDataUrl(fileId) {
+  const r = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+  if (!r.ok) throw new Error("HTTP " + r.status);
+  const blob = await r.blob();
+  return new Promise((resolve, reject) => {
+    const objUrl = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = () => {
+      URL.revokeObjectURL(objUrl);
+      const MAX = 400;
+      let w = img.naturalWidth  || MAX;
+      let h = img.naturalHeight || MAX;
+      if (w > MAX || h > MAX) {
+        if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+        else        { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width  = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', 0.72));
+    };
+    img.onerror = () => {
+      URL.revokeObjectURL(objUrl);
+      reject(new Error('Thumb-Dekodierung fehlgeschlagen'));
+    };
+    img.src = objUrl;
+  });
+}
+
 function bildZeigen(img, url, fileId) {
   const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
   img.onload  = () => {
@@ -1526,11 +1536,11 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
       }
     };
     img.onerror = async () => {
-      // Fallback: Drive API mit Bearer-Token → persistente Data-URL
+      // Fallback: Drive API mit Bearer-Token → verkleinerte Thumbnail-Data-URL (~25 KB statt 5 MB)
       if (fileId && accessToken && !img.dataset.apiFallback) {
         img.dataset.apiFallback = "1";
         try {
-          const dataUrl = await ladeAlsDataUrl(fileId);
+          const dataUrl = await ladeAlsThumbDataUrl(fileId);
           await hvCacheThumb(fileId, dataUrl, '');
           thumbCache[fileId] = dataUrl;
           img.src = dataUrl;
@@ -1576,10 +1586,10 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 4. Letzter Ausweg: Drive API direkt → Data-URL
+  // 4. Letzter Ausweg: Drive API direkt → verkleinerte Thumbnail-Data-URL
   if (accessToken) {
     try {
-      const dataUrl = await ladeAlsDataUrl(fileId);
+      const dataUrl = await ladeAlsThumbDataUrl(fileId);
       await hvCacheThumb(fileId, dataUrl, '');
       thumbCache[fileId] = dataUrl;
       zeigeThumb(dataUrl);

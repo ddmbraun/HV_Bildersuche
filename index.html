@@ -586,6 +586,113 @@
     #galerie.liste .karte-badges { margin-top:2px; }
     #galerie.liste .karte:hover { transform:none; }
 
+    /* ── Preloader-Fortschrittsleiste ─────────────────────── */
+    #hv-preloader-bar {
+      display: none;
+      position: fixed;
+      bottom: 16px;
+      right: 16px;
+      background: var(--card-bg);
+      border: 1px solid var(--grau2);
+      border-radius: 10px;
+      padding: 10px 14px;
+      font-size: .78rem;
+      color: var(--text2);
+      box-shadow: 0 2px 12px rgba(0,0,0,.18);
+      z-index: 400;
+      min-width: 220px;
+      max-width: 280px;
+    }
+    #hv-preloader-bar.sichtbar { display: block; }
+    #hv-preloader-bar .pl-titel {
+      font-weight: 600;
+      color: var(--text);
+      margin-bottom: 5px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    #hv-preloader-bar .pl-stop {
+      background: none;
+      border: none;
+      cursor: pointer;
+      color: var(--text2);
+      font-size: 13px;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    #hv-preloader-track {
+      height: 5px;
+      background: var(--grau2);
+      border-radius: 3px;
+      overflow: hidden;
+      margin: 4px 0 5px;
+    }
+    #hv-preloader-fill {
+      height: 100%;
+      background: var(--blau);
+      border-radius: 3px;
+      width: 0%;
+      transition: width .4s;
+    }
+    /* ── Modal Ausklappbereich ────────────────────────────── */
+    #modal-details {
+      border-top: 1px solid var(--grau2);
+      padding: 0 20px;
+    }
+    #modal-details summary {
+      cursor: pointer;
+      font-size: .78rem;
+      color: var(--text2);
+      padding: 8px 0;
+      user-select: none;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: 5px;
+    }
+    #modal-details summary::-webkit-details-marker { display: none; }
+    #modal-details summary::before {
+      content: "▶";
+      font-size: .65rem;
+      transition: transform .15s;
+      display: inline-block;
+    }
+    #modal-details[open] summary::before { transform: rotate(90deg); }
+    #modal-details-body {
+      padding-bottom: 12px;
+      font-size: .78rem;
+      color: var(--text2);
+      line-height: 1.7;
+    }
+    #modal-details-body .det-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+      margin-bottom: 2px;
+    }
+    #modal-details-body .det-label {
+      color: var(--text2);
+      min-width: 80px;
+      flex-shrink: 0;
+    }
+    #modal-details-body .det-val {
+      color: var(--text);
+      word-break: break-all;
+      flex: 1;
+    }
+    #modal-details-body .det-pfad-seg {
+      display: inline-block;
+      background: var(--grau2);
+      border-radius: 4px;
+      padding: 1px 6px;
+      margin: 1px 2px 1px 0;
+      font-size: .73rem;
+      word-break: break-word;
+    }
+    #modal-details-body a { color: var(--blau); text-decoration: none; }
+    #modal-details-body a:hover { text-decoration: underline; }
+
     @media print {
       header, #status-bar, #login-screen, #auswahl-leiste,
       #ergebnis-leiste, #keine-ergebnisse, #modal-overlay { display: none !important; }
@@ -745,6 +852,16 @@
 <!-- Export-Fortschritt -->
 <div id="export-fortschritt"></div>
 
+<!-- Hintergrund-Preloader Fortschrittsanzeige -->
+<div id="hv-preloader-bar">
+  <div class="pl-titel">
+    <span>📦 Vorschaubilder cachen</span>
+    <button class="pl-stop" onclick="hvPreloaderStop()" title="Abbrechen">✕</button>
+  </div>
+  <div id="hv-preloader-track"><div id="hv-preloader-fill"></div></div>
+  <span id="hv-preloader-text">Wird gestartet …</span>
+</div>
+
 <!-- Pannellum 360°-Overlay -->
 <div id="pann-overlay">
   <div id="pann-header">
@@ -773,6 +890,10 @@
       <img id="modal-bild" src="" alt="" style="display:none">
     </div>
     <div id="modal-pfad"></div>
+    <details id="modal-details">
+      <summary>Details &amp; Links</summary>
+      <div id="modal-details-body"></div>
+    </details>
     <div id="modal-footer">
       <a id="modal-link-vollbild" class="modal-btn primary" href="#" target="_blank">
         🔍 Vollbild öffnen
@@ -1007,6 +1128,81 @@ function abmelden() {
   });
 }
 
+// ── Hintergrund-Preloader ────────────────────────────────────
+// Lädt alle Thumbnails (nicht nur die 200 sichtbaren) still in IndexedDB.
+let _plAktiv = false;
+let _plStopp = false;
+
+function hvPreloaderStop() {
+  _plStopp = true;
+  const bar = document.getElementById('hv-preloader-bar');
+  if (bar) bar.classList.remove('sichtbar');
+}
+
+async function hvPreloaderStart(zeilen) {
+  if (_plAktiv || !zeilen || !zeilen.length || !accessToken) return;
+  _plAktiv = true;
+  _plStopp = false;
+  const bar   = document.getElementById('hv-preloader-bar');
+  const fill  = document.getElementById('hv-preloader-fill');
+  const txt   = document.getElementById('hv-preloader-text');
+  const gesamt = zeilen.length;
+  let geladen = 0, uebersprungen = 0, fehler = 0;
+
+  // Erst prüfen wie viele noch fehlen
+  let fehlendIds = [];
+  for (const row of zeilen) {
+    const id = row[COL.datei_id] || '';
+    if (!id) continue;
+    if (thumbCache[id]) { uebersprungen++; continue; }
+    const cached = await HvThumbCache.get(id);
+    if (cached && cached.dataUrl) { thumbCache[id] = cached.dataUrl; uebersprungen++; continue; }
+    fehlendIds.push({ id, row });
+  }
+
+  if (!fehlendIds.length) {
+    _plAktiv = false;
+    return; // Alles bereits gecacht
+  }
+
+  if (bar) bar.classList.add('sichtbar');
+  const zuLaden = fehlendIds.length;
+
+  for (let i = 0; i < fehlendIds.length; i++) {
+    if (_plStopp || !accessToken) break;
+    const { id, row } = fehlendIds[i];
+    const pct = Math.round((i / zuLaden) * 100);
+    if (fill) fill.style.width = pct + '%';
+    if (txt) txt.textContent = `${i.toLocaleString('de')} / ${zuLaden.toLocaleString('de')} neu  (${uebersprungen.toLocaleString('de')} bereits im Cache)`;
+    try {
+      // Vorschau-URL aus Sheet versuchen (spart Drive-API-Quota)
+      const vorschauUrl = row[COL.vorschau] || '';
+      if (vorschauUrl && vorschauUrl.startsWith('http')) {
+        await hvCacheThumb(id, vorschauUrl, '');
+      } else {
+        const dataUrl = await ladeAlsDataUrl(id);
+        await hvCacheThumb(id, dataUrl, '');
+      }
+      geladen++;
+    } catch(e) {
+      fehler++;
+    }
+    // Kurze Pause damit Browser-UI nicht einfriert (ca. 20 Bilder/Sek.)
+    if (i % 5 === 0) await new Promise(r => setTimeout(r, 50));
+  }
+
+  if (fill) fill.style.width = '100%';
+  if (txt) {
+    if (_plStopp) {
+      txt.textContent = `Abgebrochen. ${geladen.toLocaleString('de')} neue Bilder gecacht.`;
+    } else {
+      txt.textContent = `✓ Fertig! ${geladen.toLocaleString('de')} neu, ${uebersprungen.toLocaleString('de')} bereits vorhanden${fehler ? ', ' + fehler + ' Fehler' : ''}.`;
+    }
+  }
+  setTimeout(() => { if (bar) bar.classList.remove('sichtbar'); }, 5000);
+  _plAktiv = false;
+}
+
 // ── localStorage-Cache ───────────────────────────────────────
 // Aktive Filter-Variablen (global deklariert damit alle Funktionen Zugriff haben)
 let aktiverPfad = "";
@@ -1186,6 +1382,8 @@ async function sheetLaden(erzwingen = false) {
   dropdownsBefuellen();
   sortiertAnzeigen(aktiveSortierung);
   vorladenAlle(alleZeilen);
+  // Hintergrund-Preloader starten: alle Thumbnails in IndexedDB cachen
+  setTimeout(() => hvPreloaderStart(alleZeilen), 2000);
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
@@ -1319,6 +1517,13 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
       img.style.opacity = 1;
       const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
       if (ph) ph.style.display = 'none';
+      // Persistenter Cache: wenn die URL direkt geladen hat (z.B. drive.google.com/thumbnail
+      // mit Desktop-Cookies), URL in IndexedDB schreiben damit der nächste Seitenaufruf
+      // sofort aus Cache bedient wird — ohne erneuten Request an Google-Server.
+      if (url && url.startsWith('http') && !thumbCache[fileId]) {
+        thumbCache[fileId] = url;
+        hvCacheThumb(fileId, url, '').catch(() => {});
+      }
     };
     img.onerror = async () => {
       // Fallback: Drive API mit Bearer-Token → persistente Data-URL
@@ -1329,6 +1534,18 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
           await hvCacheThumb(fileId, dataUrl, '');
           thumbCache[fileId] = dataUrl;
           img.src = dataUrl;
+          // Safari/iOS-Fix: img.onload feuert nicht wenn src im onerror-Handler
+          // geändert wird → opacity und Placeholder hier explizit setzen.
+          img.decode().then(() => {
+            img.style.opacity = 1;
+            const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+            if (ph2) ph2.style.display = 'none';
+          }).catch(() => {
+            // decode() nicht unterstützt oder Bild trotzdem fehlerhaft
+            img.style.opacity = 1;
+            const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+            if (ph2) ph2.style.display = 'none';
+          });
           return;
         } catch(e2) { console.warn('[HV] Drive-API-Fallback fehlgeschlagen:', fileId, e2.message); }
       }
@@ -1476,6 +1693,44 @@ function modalOeffnen(obj) {
     gpsDiv.style.display = "none";
   }
   modalPfad.textContent    = obj.pfad ? "📂 " + obj.pfad : "";
+
+  // ── Ausklappbereich befüllen ──────────────────────────────
+  const detBody = document.getElementById('modal-details-body');
+  const detEl   = document.getElementById('modal-details');
+  if (detBody) {
+    const pfadSegs = (obj.pfad || '').split('/').filter(s => s.trim());
+    const pfadHtml = pfadSegs.length
+      ? pfadSegs.map(s => `<span class="det-pfad-seg">${escHtml(s)}</span>`).join('')
+      : '<span style="color:var(--text2)">—</span>';
+
+    const lat = obj.lat ? parseFloat(obj.lat).toFixed(6) : '';
+    const lon = obj.lon ? parseFloat(obj.lon).toFixed(6) : '';
+    const gpsVorhanden = lat && lon;
+    const gpsKoord = gpsVorhanden ? `${lat}, ${lon}` : '';
+    const gMapsUrl  = gpsVorhanden ? `https://maps.google.com/?q=${lat},${lon}` : '';
+    const osmUrl    = gpsVorhanden ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=17` : '';
+    const appleMaps = gpsVorhanden ? `https://maps.apple.com/?ll=${lat},${lon}&z=17` : '';
+
+    const driveViewUrl = obj.datei_id ? `https://drive.google.com/file/d/${escHtml(obj.datei_id)}/view` : '';
+    const thumbUrlDisp = obj.vorschau || (obj.datei_id ? `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w400` : '');
+
+    detBody.innerHTML = `
+      <div class="det-row"><span class="det-label">📂 Ordner</span><span class="det-val">${pfadHtml}</span></div>
+      ${obj.datei_id ? `<div class="det-row"><span class="det-label">🔑 File-ID</span><span class="det-val" style="font-size:.72rem">${escHtml(obj.datei_id)}</span></div>` : ''}
+      ${obj.datum    ? `<div class="det-row"><span class="det-label">📅 Datum</span><span class="det-val">${escHtml(obj.datum)}</span></div>` : ''}
+      ${driveViewUrl ? `<div class="det-row"><span class="det-label">🔗 Drive</span><span class="det-val"><a href="${driveViewUrl}" target="_blank">Datei in Drive öffnen ↗</a></span></div>` : ''}
+      ${thumbUrlDisp ? `<div class="det-row"><span class="det-label">🖼 Vorschau-URL</span><span class="det-val"><a href="${escHtml(thumbUrlDisp)}" target="_blank" style="font-size:.72rem;word-break:break-all">${escHtml(thumbUrlDisp)}</a></span></div>` : ''}
+      ${gpsVorhanden ? `
+      <div class="det-row"><span class="det-label">📍 GPS</span><span class="det-val">${gpsKoord}</span></div>
+      <div class="det-row"><span class="det-label">🗺 Karten</span><span class="det-val">
+        <a href="${gMapsUrl}"  target="_blank">Google Maps ↗</a> &nbsp;
+        <a href="${osmUrl}"    target="_blank">OpenStreetMap ↗</a> &nbsp;
+        <a href="${appleMaps}" target="_blank">Apple Maps ↗</a>
+      </span></div>` : ''}
+    `;
+    // Ausklappbereich beim neuen Bild immer schließen
+    if (detEl) detEl.removeAttribute('open');
+  }
 
   const vollUrl  = vollbildUrl(obj);
   const driveU   = driveUrl(obj);

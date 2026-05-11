@@ -273,12 +273,38 @@
     }
     .karte-info-text { flex: 1; min-width: 0; }
     .karte-strasse {
-      font-weight: 600;
-      font-size: .85rem;
+      font-weight: 700;
+      font-size: .95rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--text);
+    }
+    /* ── Filter-Zeile ──────────────────────────────────────── */
+    #filter-zeile {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-bottom: 6px;
+    }
+    .filter-sel {
+      background: var(--card-bg);
+      border: 1px solid var(--grau2);
+      border-radius: 6px;
+      padding: 5px 10px;
+      font-size: .82rem;
+      color: var(--text);
+      cursor: pointer;
+      max-width: 220px;
+      transition: border-color .12s;
+    }
+    .filter-sel:focus { outline: none; border-color: var(--blau); }
+    .filter-sel.aktiv { border-color: var(--blau); background: #e8f0fe; color: var(--blau); }
+    #filter-info {
+      font-size: .78rem;
+      color: var(--blau);
+      font-weight: 500;
     }
     .karte-toggle {
       font-size: .7rem;
@@ -830,6 +856,16 @@
     <button class="sort-btn" id="auswahl-modus-btn" title="Bilder auswählen">☑️ Auswählen</button>
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
+  </div>
+  <!-- Filter-Zeile: Ordner + Ort als UND-Filter zur Suche -->
+  <div id="filter-zeile">
+    <select id="pfad-filter" class="filter-sel" title="Nach Ordner/Projekt filtern" disabled>
+      <option value="">— Alle Ordner —</option>
+    </select>
+    <select id="ort-filter" class="filter-sel" title="Nach Ort filtern" disabled>
+      <option value="">— Alle Orte —</option>
+    </select>
+    <span id="filter-info"></span>
   </div>
   <div id="galerie"></div>
   <div id="keine-ergebnisse">
@@ -1961,7 +1997,16 @@ document.getElementById("sort-reset").addEventListener("click", () => sortiertAn
 ansichtSetzen(aktiveAnsicht);
 
 // Ordner- und Ort-Filter
-
+document.getElementById("pfad-filter").addEventListener("change", e => {
+  aktiverPfad = e.target.value;
+  e.target.classList.toggle("aktiv", !!aktiverPfad);
+  filterAnwenden();
+});
+document.getElementById("ort-filter").addEventListener("change", e => {
+  aktiverOrt = e.target.value.toLowerCase();
+  e.target.classList.toggle("aktiv", !!aktiverOrt);
+  filterAnwenden();
+});
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {

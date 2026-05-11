@@ -1647,9 +1647,47 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 4. Drive API → verkleinerte Thumbnail-Data-URL (max. 400px, ~25 KB).
-  //    Ergebnis wird in IndexedDB gespeichert → ab dem zweiten Besuch Schritt 2.
-  if (accessToken) {
+  // 4. vorschauUrl aus Google Sheets direkt als Blob laden (mit Bearer-Token).
+  //    Das ist der schnellste Netzwerkpfad – der Link ist bereits in der Tabelle gespeichert,
+  //    kein extra API-Call nötig. Ergebnis wird in IndexedDB gecacht.
+  if (accessToken && vorschauUrl && vorschauUrl.startsWith('http')) {
+    try {
+      let r = null;
+      try { r = await fetch(vorschauUrl); } catch(_) {}
+      if (!r || !r.ok) {
+        try { r = await fetch(vorschauUrl, { headers: { Authorization: `Bearer ${accessToken}` } }); } catch(_) {}
+      }
+      if (r && r.ok) {
+        const blob = await r.blob();
+        if (blob.size > 500) {
+          const dataUrl = await new Promise((res, rej) => {
+            const fr = new FileReader();
+            fr.onload = () => res(fr.result);
+            fr.onerror = () => rej(new Error('FileReader'));
+            fr.readAsDataURL(blob);
+          });
+          await hvCacheThumb(fileId, dataUrl, '');
+          thumbCache[fileId] = dataUrl;
+          zeigeThumb(dataUrl);
+          return;
+        }
+      }
+    } catch(e) {
+      console.warn('[HV] vorschauUrl-Fetch fehlgeschlagen:', fileId, e.message);
+    }
+    // 4b. Fallback: frischen thumbnailLink per API holen (falls gespeicherter Link abgelaufen)
+    try {
+      const thumbUrl = await ladeAlsThumbViaLink(fileId);
+      if (thumbUrl) {
+        await hvCacheThumb(fileId, thumbUrl, '');
+        thumbCache[fileId] = thumbUrl;
+        zeigeThumb(thumbUrl);
+        return;
+      }
+    } catch(e) {
+      console.warn('[HV] thumbnailLink-API fehlgeschlagen:', fileId, e.message);
+    }
+    // 4c. Letzter Ausweg: Vollbild laden + verkleinern (langsam aber zuverlässig)
     try {
       const dataUrl = await ladeAlsThumbDataUrl(fileId);
       await hvCacheThumb(fileId, dataUrl, '');
@@ -1657,13 +1695,55 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
       zeigeThumb(dataUrl);
       return;
     } catch(e) {
-      console.warn('[HV] Drive-API fehlgeschlagen:', fileId, e.message);
+      console.warn('[HV] Drive-Vollbild-Fallback fehlgeschlagen:', fileId, e.message);
     }
   }
 
-  // 5. Letzter Ausweg: vorschauUrl direkt (kein accessToken vorhanden)
+  // 5. Kein accessToken – vorschauUrl direkt im img-Tag setzen (Desktop mit Google-Cookies)
   if (vorschauUrl && vorschauUrl.startsWith('http')) {
     zeigeThumb(vorschauUrl);
+  }
+}
+
+// ── Thumbnail via Drive thumbnailLink holen (~50 KB statt 5-10 MB) ──────────
+// Holt den thumbnailLink aus Drive-Metadaten und lädt nur das kleine Vorschaubild.
+// Gibt eine data:URL zurück (für IndexedDB-Caching). Schneller Pfad für Mobilgeräte.
+async function ladeAlsThumbViaLink(fileId) {
+  if (!fileId || !accessToken) return null;
+  try {
+    // 1. Metadaten-Request (~2 KB) → thumbnailLink holen
+    const metaR = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,modifiedTime`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!metaR.ok) return null;
+    const meta = await metaR.json();
+    if (!meta.thumbnailLink) return null;
+
+    // thumbnailLink auf größere Vorschau hochskalieren (=s400 statt Standard =s220)
+    const thumbUrl = meta.thumbnailLink.replace(/=s\d+$/, '=s400');
+
+    // 2. Thumbnail laden – erst direkt (CDN, oft ohne Auth), dann mit Bearer-Token
+    let thumbR = null;
+    try { thumbR = await fetch(thumbUrl); } catch(_) {}
+    if (!thumbR || !thumbR.ok) {
+      try { thumbR = await fetch(thumbUrl, { headers: { Authorization: `Bearer ${accessToken}` } }); } catch(_) {}
+    }
+    if (!thumbR || !thumbR.ok) return null;
+
+    const blob = await thumbR.blob();
+    if (blob.size < 500) return null; // Winzig = Platzhalter, kein echtes Bild
+
+    // 3. Als data:URL zurückgeben (für IndexedDB-Persistenz)
+    return new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = () => reject(new Error('FileReader'));
+      fr.readAsDataURL(blob);
+    });
+  } catch(e) {
+    console.warn('[HV] ladeAlsThumbViaLink fehlgeschlagen:', fileId, e.message);
+    return null;
   }
 }
 
@@ -2167,82 +2247,3 @@ async function pdfErstellen() {
     const row = Math.floor(pos / COLS);
     const x = RAND + col * (bW + RAND);
     const y = RAND + row * (bH + RAND);
-    try {
-      const imgData = await ladeAlsDataUrl(ids[i]);
-      doc.addImage(imgData, "JPEG", x, y, bW, bH);
-    } catch(e) {
-      console.warn("PDF Bild übersprungen:", ids[i], e);
-    }
-  }
-  verbergeExportFortschritt();
-  doc.save(`HV-Bilder-${new Date().toISOString().slice(0,10)}.pdf`);
-}
-
-// ── 360°-Viewer (Pannellum) ───────────────────────────────────
-let pannellumViewer = null;
-let aktuelleBlobUrl = null;
-
-const pannOverlay  = document.getElementById("pann-overlay");
-const pannContainer = document.getElementById("pann-container");
-const pannTitel    = document.getElementById("pann-titel");
-
-document.getElementById("pann-close").addEventListener("click", () => {
-  pannOverlay.classList.remove("aktiv");
-  document.body.style.overflow = "";
-  if (pannellumViewer) { try { pannellumViewer.destroy(); } catch(e){} pannellumViewer = null; }
-  if (aktuelleBlobUrl) { URL.revokeObjectURL(aktuelleBlobUrl); aktuelleBlobUrl = null; }
-  pannContainer.innerHTML = "";
-});
-
-document.getElementById("modal-btn-360").addEventListener("click", async () => {
-  if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
-  const obj = aktivesZeilenObj;
-
-  // Modal schließen, Overlay öffnen
-  modalSchliessen();
-  pannOverlay.classList.add("aktiv");
-  document.body.style.overflow = "hidden";
-  pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ 360°-Bild wird geladen …</div>';
-  pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
-
-  try {
-    // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
-    const resp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const blob = await resp.blob();
-    if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
-    aktuelleBlobUrl = URL.createObjectURL(blob);
-
-    pannContainer.innerHTML = "";
-    pannellumViewer = pannellum.viewer(pannContainer, {
-      type:         "equirectangular",
-      panorama:     aktuelleBlobUrl,
-      autoLoad:     true,
-      showZoomCtrl: true,
-      mouseZoom:    true,
-      hfov:         100,
-      strings:      { loadButtonLabel: "360° starten", loadingLabel: "Wird geladen …" },
-    });
-  } catch(e) {
-    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:30px">Fehler beim Laden: ` + e.message + `</div>`;
-  }
-});
-
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(function(reg){ console.log('[SW] registriert:', reg.scope); })
-      .catch(function(e){ console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message); });
-  });
-}
-</script>
-</body>
-</html>

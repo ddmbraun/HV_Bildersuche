@@ -273,38 +273,12 @@
     }
     .karte-info-text { flex: 1; min-width: 0; }
     .karte-strasse {
-      font-weight: 700;
-      font-size: .95rem;
+      font-weight: 600;
+      font-size: .85rem;
       white-space: nowrap;
       overflow: hidden;
       text-overflow: ellipsis;
       color: var(--text);
-    }
-    /* ── Filter-Zeile ──────────────────────────────────────── */
-    #filter-zeile {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      flex-wrap: wrap;
-      margin-bottom: 6px;
-    }
-    .filter-sel {
-      background: var(--card-bg);
-      border: 1px solid var(--grau2);
-      border-radius: 6px;
-      padding: 5px 10px;
-      font-size: .82rem;
-      color: var(--text);
-      cursor: pointer;
-      max-width: 220px;
-      transition: border-color .12s;
-    }
-    .filter-sel:focus { outline: none; border-color: var(--blau); }
-    .filter-sel.aktiv { border-color: var(--blau); background: #e8f0fe; color: var(--blau); }
-    #filter-info {
-      font-size: .78rem;
-      color: var(--blau);
-      font-weight: 500;
     }
     .karte-toggle {
       font-size: .7rem;
@@ -612,113 +586,6 @@
     #galerie.liste .karte-badges { margin-top:2px; }
     #galerie.liste .karte:hover { transform:none; }
 
-    /* ── Preloader-Fortschrittsleiste ─────────────────────── */
-    #hv-preloader-bar {
-      display: none;
-      position: fixed;
-      bottom: 16px;
-      right: 16px;
-      background: var(--card-bg);
-      border: 1px solid var(--grau2);
-      border-radius: 10px;
-      padding: 10px 14px;
-      font-size: .78rem;
-      color: var(--text2);
-      box-shadow: 0 2px 12px rgba(0,0,0,.18);
-      z-index: 400;
-      min-width: 220px;
-      max-width: 280px;
-    }
-    #hv-preloader-bar.sichtbar { display: block; }
-    #hv-preloader-bar .pl-titel {
-      font-weight: 600;
-      color: var(--text);
-      margin-bottom: 5px;
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-    }
-    #hv-preloader-bar .pl-stop {
-      background: none;
-      border: none;
-      cursor: pointer;
-      color: var(--text2);
-      font-size: 13px;
-      padding: 0 2px;
-      line-height: 1;
-    }
-    #hv-preloader-track {
-      height: 5px;
-      background: var(--grau2);
-      border-radius: 3px;
-      overflow: hidden;
-      margin: 4px 0 5px;
-    }
-    #hv-preloader-fill {
-      height: 100%;
-      background: var(--blau);
-      border-radius: 3px;
-      width: 0%;
-      transition: width .4s;
-    }
-    /* ── Modal Ausklappbereich ────────────────────────────── */
-    #modal-details {
-      border-top: 1px solid var(--grau2);
-      padding: 0 20px;
-    }
-    #modal-details summary {
-      cursor: pointer;
-      font-size: .78rem;
-      color: var(--text2);
-      padding: 8px 0;
-      user-select: none;
-      list-style: none;
-      display: flex;
-      align-items: center;
-      gap: 5px;
-    }
-    #modal-details summary::-webkit-details-marker { display: none; }
-    #modal-details summary::before {
-      content: "▶";
-      font-size: .65rem;
-      transition: transform .15s;
-      display: inline-block;
-    }
-    #modal-details[open] summary::before { transform: rotate(90deg); }
-    #modal-details-body {
-      padding-bottom: 12px;
-      font-size: .78rem;
-      color: var(--text2);
-      line-height: 1.7;
-    }
-    #modal-details-body .det-row {
-      display: flex;
-      gap: 6px;
-      flex-wrap: wrap;
-      margin-bottom: 2px;
-    }
-    #modal-details-body .det-label {
-      color: var(--text2);
-      min-width: 80px;
-      flex-shrink: 0;
-    }
-    #modal-details-body .det-val {
-      color: var(--text);
-      word-break: break-all;
-      flex: 1;
-    }
-    #modal-details-body .det-pfad-seg {
-      display: inline-block;
-      background: var(--grau2);
-      border-radius: 4px;
-      padding: 1px 6px;
-      margin: 1px 2px 1px 0;
-      font-size: .73rem;
-      word-break: break-word;
-    }
-    #modal-details-body a { color: var(--blau); text-decoration: none; }
-    #modal-details-body a:hover { text-decoration: underline; }
-
     @media print {
       header, #status-bar, #login-screen, #auswahl-leiste,
       #ergebnis-leiste, #keine-ergebnisse, #modal-overlay { display: none !important; }
@@ -768,17 +635,11 @@
   </style>
 </head>
 <body>
-<!-- ── DEBUG-PANEL (temporär zum Testen – später entfernen) ── -->
-<div id="debugPanel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:99999;
-  background:rgba(0,0,0,.88);color:#0f0;font-size:11px;font-family:monospace;
-  padding:8px;max-height:180px;overflow-y:auto;line-height:1.5;">
-  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
-    <b style="color:#ff0">🔍 Debug-Log</b>
-    <button onclick="document.getElementById('debugPanel').style.display='none'"
-      style="background:#f00;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button>
-  </div>
-  <div id="debugLog"></div>
+<div id="dbgPanel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,.9);color:#0f0;font-size:11px;font-family:monospace;padding:8px;max-height:200px;overflow-y:auto;">
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px;"><b style="color:#ff0">🔍 Debug</b><button onclick="document.getElementById('dbgPanel').style.display='none'" style="background:#f00;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button></div>
+  <div id="dbgLog"></div>
 </div>
+<button onclick="testGAS()" style="position:fixed;top:6px;right:6px;z-index:99998;background:#ff0;color:#000;border:none;border-radius:6px;padding:8px 12px;font-size:12px;font-weight:700;cursor:pointer;">🔍 GAS-Test</button>
 
 <!-- ════════════════════════════════════════════════════════
      KONFIGURATION  –  Bitte einmal eintragen
@@ -822,7 +683,7 @@
 
 <header>
   <h1>🏢 HV Bild-Suche</h1>
-  <input type="text" id="suchfeld" placeholder="Straße, Ort oder Stichwort eingeben …" disabled inputmode="text" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
+  <input type="search" id="suchfeld" placeholder="Straße, Ort oder Stichwort eingeben …" disabled>
 
   <button id="login-btn">Mit Google anmelden</button>
   <div id="nutzer-info">
@@ -868,16 +729,6 @@
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
   </div>
-  <!-- Filter-Zeile: Ordner + Ort als UND-Filter zur Suche -->
-  <div id="filter-zeile">
-    <select id="pfad-filter" class="filter-sel" title="Nach Ordner/Projekt filtern" disabled>
-      <option value="">— Alle Ordner —</option>
-    </select>
-    <select id="ort-filter" class="filter-sel" title="Nach Ort filtern" disabled>
-      <option value="">— Alle Orte —</option>
-    </select>
-    <span id="filter-info"></span>
-  </div>
   <div id="galerie"></div>
   <div id="keine-ergebnisse">
     <div class="icon">🔍</div>
@@ -898,16 +749,6 @@
 
 <!-- Export-Fortschritt -->
 <div id="export-fortschritt"></div>
-
-<!-- Hintergrund-Preloader Fortschrittsanzeige -->
-<div id="hv-preloader-bar">
-  <div class="pl-titel">
-    <span>📦 Vorschaubilder cachen</span>
-    <button class="pl-stop" onclick="hvPreloaderStop()" title="Abbrechen">✕</button>
-  </div>
-  <div id="hv-preloader-track"><div id="hv-preloader-fill"></div></div>
-  <span id="hv-preloader-text">Wird gestartet …</span>
-</div>
 
 <!-- Pannellum 360°-Overlay -->
 <div id="pann-overlay">
@@ -937,10 +778,6 @@
       <img id="modal-bild" src="" alt="" style="display:none">
     </div>
     <div id="modal-pfad"></div>
-    <details id="modal-details">
-      <summary>Details &amp; Links</summary>
-      <div id="modal-details-body"></div>
-    </details>
     <div id="modal-footer">
       <a id="modal-link-vollbild" class="modal-btn primary" href="#" target="_blank">
         🔍 Vollbild öffnen
@@ -968,39 +805,27 @@ let gefiltertZeilen  = [];
 let tokenClient    = null;
 let accessToken    = null;
 
-// ── Debug-Logging (temporär) ──
-function dbg(msg, color) {
-  const panel = document.getElementById('debugPanel');
-  const log = document.getElementById('debugLog');
-  if (!panel || !log) return;
-  panel.style.display = 'block';
-  const line = document.createElement('div');
-  line.style.color = color || '#0f0';
-  line.textContent = new Date().toLocaleTimeString('de') + ' ' + msg;
-  log.appendChild(line);
-  log.scrollTop = log.scrollHeight;
-}
-// GAS-Proxy direkt testen
-async function testGasProxy() {
-  dbg('▶ Teste GAS-Proxy...', '#ff0');
-  if (!GAS_PROXY_URL) { dbg('❌ GAS_PROXY_URL ist leer!', '#f00'); return; }
+// ── GAS Thumbnail-Proxy ──────────────────────────────────────────────────────
+function dbg(msg,col){const p=document.getElementById('dbgPanel'),l=document.getElementById('dbgLog');if(!p||!l)return;p.style.display='block';const d=document.createElement('div');d.style.color=col||'#0f0';d.textContent=new Date().toLocaleTimeString('de')+' '+msg;l.appendChild(d);l.scrollTop=l.scrollHeight;}
+async function testGAS(){dbg('▶ Teste GAS-Proxy...','#ff0');if(!GAS_PROXY_URL){dbg('❌ URL leer!','#f00');return;}try{const url=GAS_PROXY_URL+'?token='+encodeURIComponent(GAS_PROXY_SECRET)+'&id=test123';dbg('URL: '+url.substring(0,60)+'...','#aaa');const r=await fetch(url);dbg('Status: '+r.status,r.ok?'#0f0':'#f00');const t=await r.text();dbg('Antwort: '+t.substring(0,150),'#0ff');}catch(e){dbg('❌ '+e.message,'#f00');}}
+const GAS_PROXY_URL    = 'https://script.google.com/macros/s/AKfycbzqouVvfBo9Yeov7EQLCS0IuV9gNtchA2Joi3PyagpE9-QkNhcohDUnUYrgtskj_Z9orw/exec';
+const GAS_PROXY_SECRET = '5253';
+
+async function ladeViaGasProxy(fileId) {
+  if (!GAS_PROXY_URL || !fileId) return null;
   try {
-    const testUrl = GAS_PROXY_URL + '?token=' + encodeURIComponent(GAS_PROXY_SECRET) + '&id=test123';
-    dbg('URL: ' + GAS_PROXY_URL.substring(0, 60) + '...', '#aaa');
-    const r = await fetch(testUrl);
-    dbg('HTTP Status: ' + r.status, r.ok ? '#0f0' : '#f00');
-    const txt = await r.text();
-    dbg('Antwort: ' + txt.substring(0, 120), '#0ff');
+    const url = GAS_PROXY_URL + '?id=' + encodeURIComponent(fileId) + '&token=' + encodeURIComponent(GAS_PROXY_SECRET);
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (!json.ok || !json.data) return null;
+    return 'data:' + (json.mime || 'image/jpeg') + ';base64,' + json.data;
   } catch(e) {
-    dbg('❌ Fetch-Fehler: ' + e.message, '#f00');
+    console.warn('[GAS-Proxy] Fehler:', e.message);
+    return null;
   }
 }
 
-// ── GAS Thumbnail-Proxy ──────────────────────────────────────────────────────
-// Nach dem Deployen von ThumbnailProxy.gs hier die Web-App-URL + Secret eintragen.
-// Solange leer: normaler Drive-API-Pfad (funktioniert nur auf Desktop).
-const GAS_PROXY_URL    = 'https://script.google.com/macros/s/AKfycbzqouVvfBo9Yeov7EQLCS0IuV9gNtchA2Joi3PyagpE9-QkNhcohDUnUYrgtskj_Z9orw/exec';
-const GAS_PROXY_SECRET = '5253';
 let tokenExpires   = 0;   // Ablaufzeitpunkt als Date.now()-ms
 let _hvWarnActive  = false;
 let suchTimer      = null;
@@ -1209,79 +1034,6 @@ function abmelden() {
   });
 }
 
-// ── Hintergrund-Preloader ────────────────────────────────────
-// Lädt alle Thumbnails (nicht nur die 200 sichtbaren) still in IndexedDB.
-let _plAktiv = false;
-let _plStopp = false;
-
-function hvPreloaderStop() {
-  _plStopp = true;
-  const bar = document.getElementById('hv-preloader-bar');
-  if (bar) bar.classList.remove('sichtbar');
-}
-
-async function hvPreloaderStart(zeilen) {
-  if (_plAktiv || !zeilen || !zeilen.length || !accessToken) return;
-  _plAktiv = true;
-  _plStopp = false;
-  const bar   = document.getElementById('hv-preloader-bar');
-  const fill  = document.getElementById('hv-preloader-fill');
-  const txt   = document.getElementById('hv-preloader-text');
-  const gesamt = zeilen.length;
-  let geladen = 0, uebersprungen = 0, fehler = 0;
-
-  // Erst prüfen wie viele noch fehlen
-  let fehlendIds = [];
-  for (const row of zeilen) {
-    const id = row[COL.datei_id] || '';
-    if (!id) continue;
-    if (thumbCache[id]) { uebersprungen++; continue; }
-    const cached = await HvThumbCache.get(id);
-    if (cached && cached.dataUrl) { thumbCache[id] = cached.dataUrl; uebersprungen++; continue; }
-    fehlendIds.push({ id, row });
-  }
-
-  if (!fehlendIds.length) {
-    _plAktiv = false;
-    return; // Alles bereits gecacht
-  }
-
-  if (bar) bar.classList.add('sichtbar');
-  const zuLaden = fehlendIds.length;
-
-  for (let i = 0; i < fehlendIds.length; i++) {
-    if (_plStopp || !accessToken) break;
-    const { id, row } = fehlendIds[i];
-    const pct = Math.round((i / zuLaden) * 100);
-    if (fill) fill.style.width = pct + '%';
-    if (txt) txt.textContent = `${i.toLocaleString('de')} / ${zuLaden.toLocaleString('de')} neu  (${uebersprungen.toLocaleString('de')} bereits im Cache)`;
-    try {
-      // Immer als data: URL cachen (max. 400px, ~25 KB).
-      // http-URLs aus dem Sheet werden NICHT gespeichert: sie verlieren ihren
-      // Auth-Kontext nach dem Neuladen und würden IndexedDB mit unbrauchbaren
-      // Einträgen füllen, die ladeThumbnail dann erneut zur Drive-API zwingen.
-      const dataUrl = await ladeAlsThumbDataUrl(id);
-      await hvCacheThumb(id, dataUrl, '');
-      geladen++;
-    } catch(e) {
-      fehler++;
-    }
-    // Kurze Pause damit Browser-UI nicht einfriert (ca. 20 Bilder/Sek.)
-    if (i % 5 === 0) await new Promise(r => setTimeout(r, 50));
-  }
-
-  if (fill) fill.style.width = '100%';
-  if (txt) {
-    if (_plStopp) {
-      txt.textContent = `Abgebrochen. ${geladen.toLocaleString('de')} neue Bilder gecacht.`;
-    } else {
-      txt.textContent = `✓ Fertig! ${geladen.toLocaleString('de')} neu, ${uebersprungen.toLocaleString('de')} bereits vorhanden${fehler ? ', ' + fehler + ' Fehler' : ''}.`;
-    }
-  }
-  setTimeout(() => { if (bar) bar.classList.remove('sichtbar'); }, 5000);
-  _plAktiv = false;
-}
-
 // ── localStorage-Cache ───────────────────────────────────────
 // Aktive Filter-Variablen (global deklariert damit alle Funktionen Zugriff haben)
 let aktiverPfad = "";
@@ -1308,23 +1060,18 @@ function vorladenAlle(zeilen) {
 }
 
 function cacheSpeichern(zeilen) {
-  const map = {};
-  zeilen.forEach(row => {
-    const fid = row[COL.datei_id];
-    const url = row[COL.vorschau];
-    if (fid && url) map[fid] = url;
-  });
-  // Zeilen + Map zusammen speichern → App öffnet beim nächsten Mal sofort ohne API-Aufruf.
-  // Fallback: wenn localStorage voll ist (>5 MB), nur die Map speichern.
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map, zeilen }));
+    // Kompaktes Format: nur fileId → ThumbnailURL (spart ~90% Speicher)
+    const map = {};
+    zeilen.forEach(row => {
+      const fid = row[COL.datei_id];
+      const url = row[COL.vorschau];
+      if (fid && url) map[fid] = url;
+    });
+    const eintrag = { ts: Date.now(), map };
+    localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
   } catch(e) {
-    try {
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map }));
-      console.warn('[HV] Zeilen-Cache übergroß – nur Thumbnail-Map gespeichert:', e.name);
-    } catch(e2) {
-      console.warn('[HV] localStorage voll – Cache nicht gespeichert:', e2.name);
-    }
+    console.warn("Cache konnte nicht gespeichert werden:", e);
   }
 }
 
@@ -1386,33 +1133,28 @@ function dropdownsBefuellen() {
 }
 
 async function sheetLaden(erzwingen = false) {
-  loginScreen.style.display = "none";
+  loginScreen.style.display    = "none";
 
-  // ── Sofortanzeige aus lokalem Cache ─────────────────────────────────────────
-  // Wenn Zeilen im localStorage gespeichert sind (und kein erzwungenes Neuladen),
-  // App sofort anzeigen – kein Warten auf die Google-Sheets-API.
-  // Der „Aktualisieren"-Button lädt bei Bedarf frische Daten.
+  // Cache prüfen — nur verwenden wenn nicht erzwungen
   if (!erzwingen) {
     const cache = cacheLaden();
-    if (cache && cache.zeilen && cache.zeilen.length) {
-      if (cache.map) Object.assign(thumbCache, cache.map);
+    if (cache && cache.zeilen && cache.zeilen.length > 0) {
       alleZeilen = cache.zeilen;
-      const alter = cache.ts ? Math.round((Date.now() - cache.ts) / 60000) : null;
-      const alterText = alter !== null
-        ? (alter < 60 ? `vor ${alter} Min.` : alter < 1440 ? `vor ${Math.round(alter/60)} Std.` : `vom ${new Date(cache.ts).toLocaleDateString('de')}`)
-        : '';
-      setStatus(`✓ ${alleZeilen.length.toLocaleString('de')} Bilder (lokal gespeichert ${alterText}) — 🔄 Aktualisieren für neue Bilder`);
+      setStatus(`✓ ${alleZeilen.length.toLocaleString("de")} Bilder (aus Cache) — Suchfeld aktiv.`);
+      cacheInfoAnzeigen(cache.ts);
       suchfeld.disabled = false;
-      galerieBereich.style.display = 'block';
+      suchfeld.focus();
+      galerieBereich.style.display = "block";
       dropdownsBefuellen();
       sortiertAnzeigen(aktiveSortierung);
       vorladenAlle(alleZeilen);
-      cacheInfoAnzeigen(cache.ts);
-      setTimeout(() => hvPreloaderStart(alleZeilen), 2000);
+      // Hintergrund-Refresh wenn Cache > 24h alt
+      const cacheAlterH = (Date.now() - cache.ts) / 3600000;
+      if (cacheAlterH > 24) {
+        setTimeout(() => sheetLaden(true), 3000); // nach 3 Sek. still aktualisieren
+      }
       return;
     }
-    // Kein Zeilen-Cache → Thumbnail-Map vorladen damit Bilder schneller erscheinen
-    if (cache && cache.map) Object.assign(thumbCache, cache.map);
   }
 
   galerieBereich.style.display = "none";
@@ -1459,8 +1201,6 @@ async function sheetLaden(erzwingen = false) {
   dropdownsBefuellen();
   sortiertAnzeigen(aktiveSortierung);
   vorladenAlle(alleZeilen);
-  // Hintergrund-Preloader starten: alle Thumbnails in IndexedDB cachen
-  setTimeout(() => hvPreloaderStart(alleZeilen), 2000);
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
@@ -1503,16 +1243,14 @@ const HvThumbCache = {
 // Gecachtes Thumbnail laden oder neu holen
 async function hvGetThumbCached(fileId, modifiedTime) {
   if (!fileId) return null;
-  // In-Memory-Cache (thumbCache) zuerst – nur data: URLs (http-URLs laufen ab)
   if (thumbCache[fileId] && thumbCache[fileId].startsWith('data:')) return thumbCache[fileId];
-  // IndexedDB prüfen – nur data: URLs verwenden, veraltete http-Einträge ignorieren
   const cached = await HvThumbCache.get(fileId);
   if (cached && cached.dataUrl && cached.dataUrl.startsWith('data:') &&
       (!modifiedTime || cached.modifiedTime === modifiedTime)) {
     thumbCache[fileId] = cached.dataUrl;
     return cached.dataUrl;
   }
-  return null;  // Kein gültiger Cache-Treffer
+  return null;
 }
 async function hvCacheThumb(fileId, dataUrl, modifiedTime) {
   thumbCache[fileId] = dataUrl;
@@ -1561,41 +1299,6 @@ async function ladeAlsDataUrl(fileId) {
   });
 }
 
-// Wie ladeAlsDataUrl, aber verkleinert das Bild auf max. 400px und komprimiert als JPEG.
-// Für Thumbnail-Caching: spart bis zu 99% Speicher gegenüber dem Original.
-async function ladeAlsThumbDataUrl(fileId) {
-  const r = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  const blob = await r.blob();
-  return new Promise((resolve, reject) => {
-    const objUrl = URL.createObjectURL(blob);
-    const img = new Image();
-    img.onload = () => {
-      URL.revokeObjectURL(objUrl);
-      const MAX = 400;
-      let w = img.naturalWidth  || MAX;
-      let h = img.naturalHeight || MAX;
-      if (w > MAX || h > MAX) {
-        if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
-        else        { w = Math.round(w * MAX / h); h = MAX; }
-      }
-      const canvas = document.createElement('canvas');
-      canvas.width  = w;
-      canvas.height = h;
-      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-      resolve(canvas.toDataURL('image/jpeg', 0.72));
-    };
-    img.onerror = () => {
-      URL.revokeObjectURL(objUrl);
-      reject(new Error('Thumb-Dekodierung fehlgeschlagen'));
-    };
-    img.src = objUrl;
-  });
-}
-
 function bildZeigen(img, url, fileId) {
   const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
   img.onload  = () => {
@@ -1603,86 +1306,15 @@ function bildZeigen(img, url, fileId) {
     if (placeholder) placeholder.style.display = "none";
   };
   img.onerror = async () => {
-    // Fallback: Drive API v3 mit Bearer-Token → kein CORS-Problem
-    if (fileId && accessToken && !img.dataset.apiFallback) {
-      img.dataset.apiFallback = "1";
-      try {
-        const blobUrl = await ladeAlsBlobUrl(fileId);
-        thumbCache[fileId] = blobUrl; // für spätere Aufrufe cachen
-        img.src = blobUrl;
-        return;
-      } catch(e) {
-        console.warn("API-Fallback fehlgeschlagen für", fileId, e.message);
-      }
-    }
-    img.style.opacity = 0;
-    if (placeholder) placeholder.style.display = "flex";
-    console.warn("Thumbnail-Fehler:", img.src.substring(0, 80));
-  };
-  img.src = url;
-}
-
-// ── Thumbnail über GAS-Proxy laden (funktioniert auf Handy ohne Cookie-Probleme) ──
-async function ladeViaGasProxy(fileId) {
-  if (!GAS_PROXY_URL || !fileId) return null;
-  try {
-    dbg('📡 GAS: ' + fileId.substring(0,12) + '...', '#ff0');
-    const url = GAS_PROXY_URL
-      + '?id=' + encodeURIComponent(fileId)
-      + '&token=' + encodeURIComponent(GAS_PROXY_SECRET);
-    const resp = await fetch(url);
-    dbg('GAS Status: ' + resp.status + ' für ' + fileId.substring(0,8), resp.ok ? '#0f0' : '#f00');
-    if (!resp.ok) return null;
-    const json = await resp.json();
-    if (!json.ok || !json.data) {
-      dbg('GAS Fehler: ' + (json.error || 'kein data'), '#f00');
-      return null;
-    }
-    dbg('✅ GAS OK: ' + Math.round(json.data.length/1024) + ' KB', '#0f0');
-    return 'data:' + (json.mime || 'image/jpeg') + ';base64,' + json.data;
-  } catch(e) {
-    dbg('❌ GAS Exception: ' + e.message, '#f00');
-    console.warn('[HV] GAS-Proxy fehlgeschlagen:', fileId, e.message);
-    return null;
-  }
-}
-
-async function ladeThumbnail(img, fileId, vorschauUrl) {
-  if (!fileId) return;
-
-  const zeigeThumb = (url) => {
-    img.onload = () => {
-      img.style.opacity = 1;
-      const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
-      if (ph) ph.style.display = 'none';
-      // Nur data: URLs in IndexedDB cachen – http-URLs laufen bei Google nach wenigen
-      // Stunden ab und würden beim nächsten Besuch neu geladen werden müssen.
-      // http-URLs werden ausschließlich im In-Memory-Cache (thumbCache) gehalten.
-    };
-    img.onerror = async () => {
-      // Bild-URL abgelaufen → kleines Thumbnail via thumbnailLink holen (~50 KB, kein Vollbild)
-      if (fileId && accessToken && !img.dataset.apiFallback) {
+      if (fileId && !img.dataset.apiFallback) {
         img.dataset.apiFallback = "1";
         try {
-          // Zuerst frischen thumbnailLink per API holen (klein, schnell)
-          const dataUrl = await ladeAlsThumbViaLink(fileId);
-          if (dataUrl) {
-            await hvCacheThumb(fileId, dataUrl, '');
-            thumbCache[fileId] = dataUrl;
-            img.src = dataUrl;
-            // Safari/iOS-Fix: img.onload feuert nicht wenn src im onerror-Handler gesetzt wird
-            img.decode().then(() => {
-              img.style.opacity = 1;
-              const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
-              if (ph2) ph2.style.display = 'none';
-            }).catch(() => {
-              img.style.opacity = 1;
-              const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
-              if (ph2) ph2.style.display = 'none';
-            });
-            return;
+          if (GAS_PROXY_URL) {
+            const d = await ladeViaGasProxy(fileId);
+            if (d) { await hvCacheThumb(fileId,d,''); thumbCache[fileId]=d; img.src=d; img.decode().then(()=>{img.style.opacity=1;const p2=img.parentElement&&img.parentElement.querySelector('.karte-bild-placeholder');if(p2)p2.style.display='none';}).catch(()=>{img.style.opacity=1;}); return; }
           }
-        } catch(e2) { console.warn('[HV] thumbnailLink-Fallback fehlgeschlagen:', fileId, e2.message); }
+          if (accessToken) { const d=await ladeAlsDataUrl(fileId); await hvCacheThumb(fileId,d,''); thumbCache[fileId]=d; img.src=d; return; }
+        } catch(e2) { console.warn('[HV] onerror:', e2.message); }
       }
       img.style.opacity = 0;
       const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
@@ -1691,16 +1323,13 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     img.src = url;
   };
 
-  // 1. In-Memory-Cache: NUR data: URLs sofort nutzen.
-  //    http-URLs aus dem localStorage-Prefill hier absichtlich überspringen –
-  //    IndexedDB hat möglicherweise eine bessere, persistente data: URL.
-  if (thumbCache[fileId] && thumbCache[fileId].startsWith('data:')) {
+  // 1. In-Memory-Cache
+  if (thumbCache[fileId]) {
     zeigeThumb(thumbCache[fileId]);
     return;
   }
 
-  // 2. IndexedDB-Cache: data: URL aus vorherigem Besuch → sofortige Anzeige ohne Netzwerk.
-  //    Das ist der Hauptpfad für alle Folgebesuche.
+  // 2. IndexedDB-Cache (nur data: URLs – blob: URLs sind nach Reload ungültig)
   const cached = await hvGetThumbCached(fileId);
   if (cached && cached.startsWith('data:')) {
     thumbCache[fileId] = cached;
@@ -1708,124 +1337,32 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 3. In-Memory-Cache: http-URL (z.B. vom localStorage-Prefill) als Sofortanzeige
-  //    während Drive API lädt — spart sichtbare Ladezeit auf dem Erstbesuch.
-  if (thumbCache[fileId] && thumbCache[fileId].startsWith('http')) {
-    zeigeThumb(thumbCache[fileId]);
+  // 3. Vorschau-URL aus Sheet (schnell, mit automatischem Fallback bei Fehler)
+  if (vorschauUrl && vorschauUrl.startsWith('http')) {
+    zeigeThumb(vorschauUrl);
     return;
   }
 
-  // 4. GAS-Proxy: zuverlässigster Pfad auf dem Handy – kein Cookie, kein CDN-Problem.
-  //    Nur aktiv wenn GAS_PROXY_URL konfiguriert ist.
+  // 4. GAS-Proxy: zuverlässig auf Handy – kein Cookie, kein CDN-Problem
   if (GAS_PROXY_URL) {
     try {
-      const proxyDataUrl = await ladeViaGasProxy(fileId);
-      if (proxyDataUrl) {
-        await hvCacheThumb(fileId, proxyDataUrl, '');
-        thumbCache[fileId] = proxyDataUrl;
-        zeigeThumb(proxyDataUrl);
+      const proxyUrl = await ladeViaGasProxy(fileId);
+      if (proxyUrl) {
+        await hvCacheThumb(fileId, proxyUrl, '');
+        thumbCache[fileId] = proxyUrl;
+        zeigeThumb(proxyUrl);
         return;
       }
-    } catch(e) {
-      console.warn('[HV] GAS-Proxy fehlgeschlagen:', fileId, e.message);
-    }
+    } catch(e) { console.warn('[HV] GAS fehlgeschlagen:', fileId, e.message); }
   }
-
-  // 4b. Fallback (Desktop): vorschauUrl aus Google Sheets direkt laden.
-  if (accessToken && vorschauUrl && vorschauUrl.startsWith('http')) {
+  // 4b. Fallback Desktop: Drive API direkt
+  if (accessToken) {
     try {
-      let r = null;
-      try { r = await fetch(vorschauUrl); } catch(_) {}
-      if (!r || !r.ok) {
-        try { r = await fetch(vorschauUrl, { headers: { Authorization: `Bearer ${accessToken}` } }); } catch(_) {}
-      }
-      if (r && r.ok) {
-        const blob = await r.blob();
-        if (blob.size > 500) {
-          const dataUrl = await new Promise((res, rej) => {
-            const fr = new FileReader();
-            fr.onload = () => res(fr.result);
-            fr.onerror = () => rej(new Error('FileReader'));
-            fr.readAsDataURL(blob);
-          });
-          await hvCacheThumb(fileId, dataUrl, '');
-          thumbCache[fileId] = dataUrl;
-          zeigeThumb(dataUrl);
-          return;
-        }
-      }
-    } catch(e) {
-      console.warn('[HV] vorschauUrl-Fetch fehlgeschlagen:', fileId, e.message);
-    }
-    // 4b. Fallback: frischen thumbnailLink per API holen (falls gespeicherter Link abgelaufen)
-    try {
-      const thumbUrl = await ladeAlsThumbViaLink(fileId);
-      if (thumbUrl) {
-        await hvCacheThumb(fileId, thumbUrl, '');
-        thumbCache[fileId] = thumbUrl;
-        zeigeThumb(thumbUrl);
-        return;
-      }
-    } catch(e) {
-      console.warn('[HV] thumbnailLink-API fehlgeschlagen:', fileId, e.message);
-    }
-    // 4c. Letzter Ausweg: Vollbild laden + verkleinern (langsam aber zuverlässig)
-    try {
-      const dataUrl = await ladeAlsThumbDataUrl(fileId);
+      const dataUrl = await ladeAlsDataUrl(fileId);
       await hvCacheThumb(fileId, dataUrl, '');
       thumbCache[fileId] = dataUrl;
       zeigeThumb(dataUrl);
-      return;
-    } catch(e) {
-      console.warn('[HV] Drive-Vollbild-Fallback fehlgeschlagen:', fileId, e.message);
-    }
-  }
-
-  // 5. Kein accessToken und kein GAS-Proxy – vorschauUrl direkt im img-Tag (Desktop mit Google-Cookies)
-  if (vorschauUrl && vorschauUrl.startsWith('http')) {
-    zeigeThumb(vorschauUrl);
-  }
-}
-
-// ── Thumbnail via Drive thumbnailLink holen (~50 KB statt 5-10 MB) ──────────
-// Holt den thumbnailLink aus Drive-Metadaten und lädt nur das kleine Vorschaubild.
-// Gibt eine data:URL zurück (für IndexedDB-Caching). Schneller Pfad für Mobilgeräte.
-async function ladeAlsThumbViaLink(fileId) {
-  if (!fileId || !accessToken) return null;
-  try {
-    // 1. Metadaten-Request (~2 KB) → thumbnailLink holen
-    const metaR = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink,modifiedTime`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!metaR.ok) return null;
-    const meta = await metaR.json();
-    if (!meta.thumbnailLink) return null;
-
-    // thumbnailLink auf größere Vorschau hochskalieren (=s400 statt Standard =s220)
-    const thumbUrl = meta.thumbnailLink.replace(/=s\d+$/, '=s400');
-
-    // 2. Thumbnail laden – erst direkt (CDN, oft ohne Auth), dann mit Bearer-Token
-    let thumbR = null;
-    try { thumbR = await fetch(thumbUrl); } catch(_) {}
-    if (!thumbR || !thumbR.ok) {
-      try { thumbR = await fetch(thumbUrl, { headers: { Authorization: `Bearer ${accessToken}` } }); } catch(_) {}
-    }
-    if (!thumbR || !thumbR.ok) return null;
-
-    const blob = await thumbR.blob();
-    if (blob.size < 500) return null; // Winzig = Platzhalter, kein echtes Bild
-
-    // 3. Als data:URL zurückgeben (für IndexedDB-Persistenz)
-    return new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = () => reject(new Error('FileReader'));
-      fr.readAsDataURL(blob);
-    });
-  } catch(e) {
-    console.warn('[HV] ladeAlsThumbViaLink fehlgeschlagen:', fileId, e.message);
-    return null;
+    } catch(e) { console.warn('[HV] Drive-API fehlgeschlagen:', fileId, e.message); }
   }
 }
 
@@ -1872,6 +1409,7 @@ function galerieAnzeigen(zeilen) {
         <div class="karte-strasse" title="${escHtml(obj.adresse)}">${escHtml(obj.adresse || "(keine Straße)")}</div>
         <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
+        ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
 
     // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal
@@ -1934,44 +1472,6 @@ function modalOeffnen(obj) {
     gpsDiv.style.display = "none";
   }
   modalPfad.textContent    = obj.pfad ? "📂 " + obj.pfad : "";
-
-  // ── Ausklappbereich befüllen ──────────────────────────────
-  const detBody = document.getElementById('modal-details-body');
-  const detEl   = document.getElementById('modal-details');
-  if (detBody) {
-    const pfadSegs = (obj.pfad || '').split('/').filter(s => s.trim());
-    const pfadHtml = pfadSegs.length
-      ? pfadSegs.map(s => `<span class="det-pfad-seg">${escHtml(s)}</span>`).join('')
-      : '<span style="color:var(--text2)">—</span>';
-
-    const lat = obj.lat ? parseFloat(obj.lat).toFixed(6) : '';
-    const lon = obj.lon ? parseFloat(obj.lon).toFixed(6) : '';
-    const gpsVorhanden = lat && lon;
-    const gpsKoord = gpsVorhanden ? `${lat}, ${lon}` : '';
-    const gMapsUrl  = gpsVorhanden ? `https://maps.google.com/?q=${lat},${lon}` : '';
-    const osmUrl    = gpsVorhanden ? `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}&zoom=17` : '';
-    const appleMaps = gpsVorhanden ? `https://maps.apple.com/?ll=${lat},${lon}&z=17` : '';
-
-    const driveViewUrl = obj.datei_id ? `https://drive.google.com/file/d/${escHtml(obj.datei_id)}/view` : '';
-    const thumbUrlDisp = obj.vorschau || (obj.datei_id ? `https://drive.google.com/thumbnail?id=${obj.datei_id}&sz=w400` : '');
-
-    detBody.innerHTML = `
-      <div class="det-row"><span class="det-label">📂 Ordner</span><span class="det-val">${pfadHtml}</span></div>
-      ${obj.datei_id ? `<div class="det-row"><span class="det-label">🔑 File-ID</span><span class="det-val" style="font-size:.72rem">${escHtml(obj.datei_id)}</span></div>` : ''}
-      ${obj.datum    ? `<div class="det-row"><span class="det-label">📅 Datum</span><span class="det-val">${escHtml(obj.datum)}</span></div>` : ''}
-      ${driveViewUrl ? `<div class="det-row"><span class="det-label">🔗 Drive</span><span class="det-val"><a href="${driveViewUrl}" target="_blank">Datei in Drive öffnen ↗</a></span></div>` : ''}
-      ${thumbUrlDisp ? `<div class="det-row"><span class="det-label">🖼 Vorschau-URL</span><span class="det-val"><a href="${escHtml(thumbUrlDisp)}" target="_blank" style="font-size:.72rem;word-break:break-all">${escHtml(thumbUrlDisp)}</a></span></div>` : ''}
-      ${gpsVorhanden ? `
-      <div class="det-row"><span class="det-label">📍 GPS</span><span class="det-val">${gpsKoord}</span></div>
-      <div class="det-row"><span class="det-label">🗺 Karten</span><span class="det-val">
-        <a href="${gMapsUrl}"  target="_blank">Google Maps ↗</a> &nbsp;
-        <a href="${osmUrl}"    target="_blank">OpenStreetMap ↗</a> &nbsp;
-        <a href="${appleMaps}" target="_blank">Apple Maps ↗</a>
-      </span></div>` : ''}
-    `;
-    // Ausklappbereich beim neuen Bild immer schließen
-    if (detEl) detEl.removeAttribute('open');
-  }
 
   const vollUrl  = vollbildUrl(obj);
   const driveU   = driveUrl(obj);
@@ -2159,16 +1659,7 @@ document.getElementById("sort-reset").addEventListener("click", () => sortiertAn
 ansichtSetzen(aktiveAnsicht);
 
 // Ordner- und Ort-Filter
-document.getElementById("pfad-filter").addEventListener("change", e => {
-  aktiverPfad = e.target.value;
-  e.target.classList.toggle("aktiv", !!aktiverPfad);
-  filterAnwenden();
-});
-document.getElementById("ort-filter").addEventListener("change", e => {
-  aktiverOrt = e.target.value.toLowerCase();
-  e.target.classList.toggle("aktiv", !!aktiverOrt);
-  filterAnwenden();
-});
+
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {
@@ -2329,3 +1820,83 @@ async function pdfErstellen() {
     const row = Math.floor(pos / COLS);
     const x = RAND + col * (bW + RAND);
     const y = RAND + row * (bH + RAND);
+    try {
+      const imgData = await ladeAlsDataUrl(ids[i]);
+      doc.addImage(imgData, "JPEG", x, y, bW, bH);
+    } catch(e) {
+      console.warn("PDF Bild übersprungen:", ids[i], e);
+    }
+  }
+  verbergeExportFortschritt();
+  doc.save(`HV-Bilder-${new Date().toISOString().slice(0,10)}.pdf`);
+}
+
+// ── 360°-Viewer (Pannellum) ───────────────────────────────────
+let pannellumViewer = null;
+let aktuelleBlobUrl = null;
+
+const pannOverlay  = document.getElementById("pann-overlay");
+const pannContainer = document.getElementById("pann-container");
+const pannTitel    = document.getElementById("pann-titel");
+
+document.getElementById("pann-close").addEventListener("click", () => {
+  pannOverlay.classList.remove("aktiv");
+  document.body.style.overflow = "";
+  if (pannellumViewer) { try { pannellumViewer.destroy(); } catch(e){} pannellumViewer = null; }
+  if (aktuelleBlobUrl) { URL.revokeObjectURL(aktuelleBlobUrl); aktuelleBlobUrl = null; }
+  pannContainer.innerHTML = "";
+});
+
+document.getElementById("modal-btn-360").addEventListener("click", async () => {
+  if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
+  const obj = aktivesZeilenObj;
+
+  // Modal schließen, Overlay öffnen
+  modalSchliessen();
+  pannOverlay.classList.add("aktiv");
+  document.body.style.overflow = "hidden";
+  pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ 360°-Bild wird geladen …</div>';
+  pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
+
+  try {
+    // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
+    const resp = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const blob = await resp.blob();
+    if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
+    aktuelleBlobUrl = URL.createObjectURL(blob);
+
+    pannContainer.innerHTML = "";
+    pannellumViewer = pannellum.viewer(pannContainer, {
+      type:         "equirectangular",
+      panorama:     aktuelleBlobUrl,
+      autoLoad:     true,
+      showZoomCtrl: true,
+      mouseZoom:    true,
+      hfov:         100,
+      strings:      { loadButtonLabel: "360° starten", loadingLabel: "Wird geladen …" },
+    });
+  } catch(e) {
+    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:30px">Fehler beim Laden: ` + e.message + `</div>`;
+  }
+});
+
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js')
+      .then(function(reg){ console.log('[SW] registriert:', reg.scope); })
+      .catch(function(e){ console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message); });
+  });
+}
+</script>
+
+</body>
+</html>                                                                   

@@ -956,6 +956,12 @@ let alleZeilen  = [];   // Alle Sheet-Zeilen
 let gefiltertZeilen  = [];
 let tokenClient    = null;
 let accessToken    = null;
+
+// ── GAS Thumbnail-Proxy ──────────────────────────────────────────────────────
+// Nach dem Deployen von ThumbnailProxy.gs hier die Web-App-URL + Secret eintragen.
+// Solange leer: normaler Drive-API-Pfad (funktioniert nur auf Desktop).
+const GAS_PROXY_URL    = 'https://script.google.com/macros/s/AKfycbzqouVvfBo9Yeov7EQLCS0IuV9gNtchA2Joi3PyagpE9-QkNhcohDUnUYrgtskj_Z9orw/exec';
+const GAS_PROXY_SECRET = '5253';
 let tokenExpires   = 0;   // Ablaufzeitpunkt als Date.now()-ms
 let _hvWarnActive  = false;
 let suchTimer      = null;
@@ -1577,6 +1583,24 @@ function bildZeigen(img, url, fileId) {
   img.src = url;
 }
 
+// ── Thumbnail über GAS-Proxy laden (funktioniert auf Handy ohne Cookie-Probleme) ──
+async function ladeViaGasProxy(fileId) {
+  if (!GAS_PROXY_URL || !fileId) return null;
+  try {
+    const url = GAS_PROXY_URL
+      + '?id=' + encodeURIComponent(fileId)
+      + '&token=' + encodeURIComponent(GAS_PROXY_SECRET);
+    const resp = await fetch(url);
+    if (!resp.ok) return null;
+    const json = await resp.json();
+    if (!json.ok || !json.data) return null;
+    return 'data:' + (json.mime || 'image/jpeg') + ';base64,' + json.data;
+  } catch(e) {
+    console.warn('[HV] GAS-Proxy fehlgeschlagen:', fileId, e.message);
+    return null;
+  }
+}
+
 async function ladeThumbnail(img, fileId, vorschauUrl) {
   if (!fileId) return;
 
@@ -1645,9 +1669,23 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 4. vorschauUrl aus Google Sheets direkt als Blob laden (mit Bearer-Token).
-  //    Das ist der schnellste Netzwerkpfad – der Link ist bereits in der Tabelle gespeichert,
-  //    kein extra API-Call nötig. Ergebnis wird in IndexedDB gecacht.
+  // 4. GAS-Proxy: zuverlässigster Pfad auf dem Handy – kein Cookie, kein CDN-Problem.
+  //    Nur aktiv wenn GAS_PROXY_URL konfiguriert ist.
+  if (GAS_PROXY_URL) {
+    try {
+      const proxyDataUrl = await ladeViaGasProxy(fileId);
+      if (proxyDataUrl) {
+        await hvCacheThumb(fileId, proxyDataUrl, '');
+        thumbCache[fileId] = proxyDataUrl;
+        zeigeThumb(proxyDataUrl);
+        return;
+      }
+    } catch(e) {
+      console.warn('[HV] GAS-Proxy fehlgeschlagen:', fileId, e.message);
+    }
+  }
+
+  // 4b. Fallback (Desktop): vorschauUrl aus Google Sheets direkt laden.
   if (accessToken && vorschauUrl && vorschauUrl.startsWith('http')) {
     try {
       let r = null;
@@ -1697,7 +1735,7 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     }
   }
 
-  // 5. Kein accessToken – vorschauUrl direkt im img-Tag setzen (Desktop mit Google-Cookies)
+  // 5. Kein accessToken und kein GAS-Proxy – vorschauUrl direkt im img-Tag (Desktop mit Google-Cookies)
   if (vorschauUrl && vorschauUrl.startsWith('http')) {
     zeigeThumb(vorschauUrl);
   }

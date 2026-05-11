@@ -785,7 +785,7 @@
 
 <header>
   <h1>🏢 HV Bild-Suche</h1>
-  <input type="search" id="suchfeld" placeholder="Straße, Ort oder Stichwort eingeben …" disabled>
+  <input type="text" id="suchfeld" placeholder="Straße, Ort oder Stichwort eingeben …" disabled inputmode="text" enterkeyhint="search" autocomplete="off" autocorrect="off" spellcheck="false">
 
   <button id="login-btn">Mit Google anmelden</button>
   <div id="nutzer-info">
@@ -1580,20 +1580,26 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 3. Vorschau-URL aus Sheet (schnell, mit automatischem Fallback bei Fehler)
-  if (vorschauUrl && vorschauUrl.startsWith('http')) {
-    zeigeThumb(vorschauUrl);
-    return;
-  }
-
-  // 4. Letzter Ausweg: Drive API direkt → verkleinerte Thumbnail-Data-URL
+  // 3. Drive API → verkleinerte Thumbnail-Data-URL (funktioniert auf Desktop UND Mobile).
+  // drive.google.com/thumbnail URLs werden hier bewusst übersprungen: auf Mobile ohne
+  // Cookies kann Google eine 200-OK-Platzhalter-Grafik zurückgeben → img.onerror
+  // feuert nie → Fallback greift nie. Die Drive API mit Bearer-Token ist zuverlässiger.
+  // Nach dem ersten Laden liegt alles in IndexedDB → ab dem zweiten Besuch sofortig.
   if (accessToken) {
     try {
       const dataUrl = await ladeAlsThumbDataUrl(fileId);
       await hvCacheThumb(fileId, dataUrl, '');
       thumbCache[fileId] = dataUrl;
       zeigeThumb(dataUrl);
-    } catch(e) { console.warn('[HV] Thumbnail fehlgeschlagen:', fileId, e.message); }
+      return;
+    } catch(e) {
+      console.warn('[HV] Drive-API fehlgeschlagen:', fileId, e.message);
+    }
+  }
+
+  // 4. Letzter Ausweg: vorschauUrl direkt (z.B. wenn kein accessToken vorhanden)
+  if (vorschauUrl && vorschauUrl.startsWith('http')) {
+    zeigeThumb(vorschauUrl);
   }
 }
 
@@ -2166,6 +2172,5 @@ if ('serviceWorker' in navigator) {
   });
 }
 </script>
-
 </body>
-</html>                                                                   
+</html>

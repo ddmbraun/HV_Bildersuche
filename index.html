@@ -1175,15 +1175,12 @@ async function hvPreloaderStart(zeilen) {
     if (fill) fill.style.width = pct + '%';
     if (txt) txt.textContent = `${i.toLocaleString('de')} / ${zuLaden.toLocaleString('de')} neu  (${uebersprungen.toLocaleString('de')} bereits im Cache)`;
     try {
-      // Vorschau-URL aus Sheet versuchen (spart Drive-API-Quota)
-      const vorschauUrl = row[COL.vorschau] || '';
-      if (vorschauUrl && vorschauUrl.startsWith('http')) {
-        await hvCacheThumb(id, vorschauUrl, '');
-      } else {
-        // Kein vorschauUrl → verkleinert von Drive laden (max. 400px, ~25 KB)
-        const dataUrl = await ladeAlsThumbDataUrl(id);
-        await hvCacheThumb(id, dataUrl, '');
-      }
+      // Immer als data: URL cachen (max. 400px, ~25 KB).
+      // http-URLs aus dem Sheet werden NICHT gespeichert: sie verlieren ihren
+      // Auth-Kontext nach dem Neuladen und würden IndexedDB mit unbrauchbaren
+      // Einträgen füllen, die ladeThumbnail dann erneut zur Drive-API zwingen.
+      const dataUrl = await ladeAlsThumbDataUrl(id);
+      await hvCacheThumb(id, dataUrl, '');
       geladen++;
     } catch(e) {
       fehler++;
@@ -1230,18 +1227,23 @@ function vorladenAlle(zeilen) {
 }
 
 function cacheSpeichern(zeilen) {
-  // Nur map speichern (fileId → ThumbnailURL) — zeilen werden immer frisch von der API geladen.
-  // Kein zeilen-Vollformat: würde localStorage (5–10 MB Limit) zum Überlaufen bringen.
   const map = {};
   zeilen.forEach(row => {
     const fid = row[COL.datei_id];
     const url = row[COL.vorschau];
     if (fid && url) map[fid] = url;
   });
+  // Zeilen + Map zusammen speichern → App öffnet beim nächsten Mal sofort ohne API-Aufruf.
+  // Fallback: wenn localStorage voll ist (>5 MB), nur die Map speichern.
   try {
-    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map }));
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map, zeilen }));
   } catch(e) {
-    console.warn('[HV] Thumbnail-Map konnte nicht im localStorage gespeichert werden:', e.name);
+    try {
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), map }));
+      console.warn('[HV] Zeilen-Cache übergroß – nur Thumbnail-Map gespeichert:', e.name);
+    } catch(e2) {
+      console.warn('[HV] localStorage voll – Cache nicht gespeichert:', e2.name);
+    }
   }
 }
 
@@ -1303,14 +1305,33 @@ function dropdownsBefuellen() {
 }
 
 async function sheetLaden(erzwingen = false) {
-  loginScreen.style.display    = "none";
+  loginScreen.style.display = "none";
 
-  // Thumbnail-Map aus localStorage vorladen (für schnelle Anzeige während API lädt)
+  // ── Sofortanzeige aus lokalem Cache ─────────────────────────────────────────
+  // Wenn Zeilen im localStorage gespeichert sind (und kein erzwungenes Neuladen),
+  // App sofort anzeigen – kein Warten auf die Google-Sheets-API.
+  // Der „Aktualisieren"-Button lädt bei Bedarf frische Daten.
   if (!erzwingen) {
     const cache = cacheLaden();
-    if (cache && cache.map) {
-      Object.assign(thumbCache, cache.map); // URL-Map vorab in thumbCache eintragen
+    if (cache && cache.zeilen && cache.zeilen.length) {
+      if (cache.map) Object.assign(thumbCache, cache.map);
+      alleZeilen = cache.zeilen;
+      const alter = cache.ts ? Math.round((Date.now() - cache.ts) / 60000) : null;
+      const alterText = alter !== null
+        ? (alter < 60 ? `vor ${alter} Min.` : alter < 1440 ? `vor ${Math.round(alter/60)} Std.` : `vom ${new Date(cache.ts).toLocaleDateString('de')}`)
+        : '';
+      setStatus(`✓ ${alleZeilen.length.toLocaleString('de')} Bilder (lokal gespeichert ${alterText}) — 🔄 Aktualisieren für neue Bilder`);
+      suchfeld.disabled = false;
+      galerieBereich.style.display = 'block';
+      dropdownsBefuellen();
+      sortiertAnzeigen(aktiveSortierung);
+      vorladenAlle(alleZeilen);
+      cacheInfoAnzeigen(cache.ts);
+      setTimeout(() => hvPreloaderStart(alleZeilen), 2000);
+      return;
     }
+    // Kein Zeilen-Cache → Thumbnail-Map vorladen damit Bilder schneller erscheinen
+    if (cache && cache.map) Object.assign(thumbCache, cache.map);
   }
 
   galerieBereich.style.display = "none";
@@ -1566,13 +1587,16 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     img.src = url;
   };
 
-  // 1. In-Memory-Cache
-  if (thumbCache[fileId]) {
+  // 1. In-Memory-Cache: NUR data: URLs sofort nutzen.
+  //    http-URLs aus dem localStorage-Prefill hier absichtlich überspringen –
+  //    IndexedDB hat möglicherweise eine bessere, persistente data: URL.
+  if (thumbCache[fileId] && thumbCache[fileId].startsWith('data:')) {
     zeigeThumb(thumbCache[fileId]);
     return;
   }
 
-  // 2. IndexedDB-Cache (nur data: URLs – blob: URLs sind nach Reload ungültig)
+  // 2. IndexedDB-Cache: data: URL aus vorherigem Besuch → sofortige Anzeige ohne Netzwerk.
+  //    Das ist der Hauptpfad für alle Folgebesuche.
   const cached = await hvGetThumbCached(fileId);
   if (cached && cached.startsWith('data:')) {
     thumbCache[fileId] = cached;
@@ -1580,11 +1604,15 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     return;
   }
 
-  // 3. Drive API → verkleinerte Thumbnail-Data-URL (funktioniert auf Desktop UND Mobile).
-  // drive.google.com/thumbnail URLs werden hier bewusst übersprungen: auf Mobile ohne
-  // Cookies kann Google eine 200-OK-Platzhalter-Grafik zurückgeben → img.onerror
-  // feuert nie → Fallback greift nie. Die Drive API mit Bearer-Token ist zuverlässiger.
-  // Nach dem ersten Laden liegt alles in IndexedDB → ab dem zweiten Besuch sofortig.
+  // 3. In-Memory-Cache: http-URL (z.B. vom localStorage-Prefill) als Sofortanzeige
+  //    während Drive API lädt — spart sichtbare Ladezeit auf dem Erstbesuch.
+  if (thumbCache[fileId] && thumbCache[fileId].startsWith('http')) {
+    zeigeThumb(thumbCache[fileId]);
+    return;
+  }
+
+  // 4. Drive API → verkleinerte Thumbnail-Data-URL (max. 400px, ~25 KB).
+  //    Ergebnis wird in IndexedDB gespeichert → ab dem zweiten Besuch Schritt 2.
   if (accessToken) {
     try {
       const dataUrl = await ladeAlsThumbDataUrl(fileId);
@@ -1597,7 +1625,7 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
     }
   }
 
-  // 4. Letzter Ausweg: vorschauUrl direkt (z.B. wenn kein accessToken vorhanden)
+  // 5. Letzter Ausweg: vorschauUrl direkt (kein accessToken vorhanden)
   if (vorschauUrl && vorschauUrl.startsWith('http')) {
     zeigeThumb(vorschauUrl);
   }
@@ -1646,7 +1674,6 @@ function galerieAnzeigen(zeilen) {
         <div class="karte-strasse" title="${escHtml(obj.adresse)}">${escHtml(obj.adresse || "(keine Straße)")}</div>
         <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
-        ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
 
     // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal

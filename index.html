@@ -1299,13 +1299,16 @@ async function ladeAlsDataUrl(fileId) {
   });
 }
 
-function bildZeigen(img, url, fileId) {
-  const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
-  img.onload  = () => {
-    img.style.opacity = 1;
-    if (placeholder) placeholder.style.display = "none";
-  };
-  img.onerror = async () => {
+async function ladeThumbnail(img, fileId, vorschauUrl) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  function zeigeThumb(url) {
+    const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
+    img.onload = () => {
+      img.style.opacity = 1;
+      if (placeholder) placeholder.style.display = "none";
+    };
+    img.onerror = async () => {
       if (fileId && !img.dataset.apiFallback) {
         img.dataset.apiFallback = "1";
         try {
@@ -1321,7 +1324,7 @@ function bildZeigen(img, url, fileId) {
       if (ph) ph.style.display = 'flex';
     };
     img.src = url;
-  };
+  }
 
   // 1. In-Memory-Cache
   if (thumbCache[fileId]) {
@@ -1337,8 +1340,8 @@ function bildZeigen(img, url, fileId) {
     return;
   }
 
-  // 3. Vorschau-URL aus Sheet (schnell, mit automatischem Fallback bei Fehler)
-  if (vorschauUrl && vorschauUrl.startsWith('http')) {
+  // 3. Vorschau-URL aus Sheet – NUR Desktop (iPhone: Google-CDN braucht Session-Cookies)
+  if (!isMobile && vorschauUrl && vorschauUrl.startsWith('http')) {
     zeigeThumb(vorschauUrl);
     return;
   }

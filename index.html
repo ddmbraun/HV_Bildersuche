@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://script.google.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
@@ -811,8 +811,18 @@ async function testGAS(){dbg('▶ Teste GAS-Proxy...','#ff0');if(!GAS_PROXY_URL)
 const GAS_PROXY_URL    = 'https://script.google.com/macros/s/AKfycbzqouVvfBo9Yeov7EQLCS0IuV9gNtchA2Joi3PyagpE9-QkNhcohDUnUYrgtskj_Z9orw/exec';
 const GAS_PROXY_SECRET = '5253';
 
+// Semaphore: max. 4 gleichzeitige GAS-Proxy-Aufrufe (verhindert Überlastung)
+let _gasLaufend = 0;
+const _GAS_MAX  = 4;
+const _gasWarteschlange = [];
+
 async function ladeViaGasProxy(fileId) {
   if (!GAS_PROXY_URL || !fileId) return null;
+  // Warten wenn zu viele Anfragen laufen
+  if (_gasLaufend >= _GAS_MAX) {
+    await new Promise(resolve => _gasWarteschlange.push(resolve));
+  }
+  _gasLaufend++;
   try {
     const url = GAS_PROXY_URL + '?id=' + encodeURIComponent(fileId) + '&token=' + encodeURIComponent(GAS_PROXY_SECRET);
     const resp = await fetch(url);
@@ -823,6 +833,9 @@ async function ladeViaGasProxy(fileId) {
   } catch(e) {
     console.warn('[GAS-Proxy] Fehler:', e.message);
     return null;
+  } finally {
+    _gasLaufend--;
+    if (_gasWarteschlange.length) _gasWarteschlange.shift()();
   }
 }
 
@@ -1021,8 +1034,6 @@ function abmelden() {
   google.accounts.oauth2.revoke(accessToken, () => {
     accessToken = null;
     alleZeilen  = [];
-    nutzerInfo.style.display = "flex";
-    loginBtn.style.display   = "block";
     nutzerInfo.style.display = "none";
     loginBtn.style.display   = "block";
     galerieBereich.style.display = "none";
@@ -1042,7 +1053,9 @@ let aktiverOrt   = "";
 const CACHE_KEY = "hv_bild_cache_v1";
 
 function vorladenAlle(zeilen) {
-  // Alle Thumbnail-URLs still im Hintergrund vorladen (Browser-Cache waermen)
+  // Auf Mobilgeräten sinnlos – Google-CDN-URLs brauchen Session-Cookies (nur Desktop)
+  if (/iPhone|iPad|iPod|Android/i.test(navigator.userAgent)) return;
+  // Alle Thumbnail-URLs still im Hintergrund vorladen (Browser-Cache wärmen)
   const fn = () => {
     zeilen.forEach(row => {
       const url = row[COL.vorschau] || '';
@@ -1061,17 +1074,17 @@ function vorladenAlle(zeilen) {
 
 function cacheSpeichern(zeilen) {
   try {
-    // Kompaktes Format: nur fileId → ThumbnailURL (spart ~90% Speicher)
-    const map = {};
-    zeilen.forEach(row => {
-      const fid = row[COL.datei_id];
-      const url = row[COL.vorschau];
-      if (fid && url) map[fid] = url;
-    });
-    const eintrag = { ts: Date.now(), map };
+    // Nur zeilen + Zeitstempel speichern – map ist redundant (zeilen enthält alles)
+    const eintrag = { ts: Date.now(), zeilen };
     localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
   } catch(e) {
-    console.warn("Cache konnte nicht gespeichert werden:", e);
+    // localStorage voll (häufig auf iPhone) → alten Cache löschen und nochmal versuchen
+    try {
+      localStorage.removeItem(CACHE_KEY);
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), zeilen }));
+    } catch(e2) {
+      console.warn('[HV] Cache konnte nicht gespeichert werden:', e2.message);
+    }
   }
 }
 
@@ -1270,7 +1283,7 @@ const thumbObserver = new IntersectionObserver((entries) => {
     thumbObserver.unobserve(karte);
     ladeThumbnail(img, fileId, vorschau);
   });
-}, { rootMargin: "800px" });
+}, { rootMargin: "1200px" });
 
 // Authentifiziertes Bild-Laden via Drive API v3 → Blob → ObjectURL (kein CORS-Problem)
 async function ladeAlsBlobUrl(fileId) {
@@ -1649,6 +1662,7 @@ function ansichtSetzen(ansicht) {
 
 loginBtn.addEventListener("click", anmelden);
 loginScreenBtn.addEventListener("click", anmelden);
+logoutBtn.addEventListener("click", abmelden);
 
 document.getElementById("ansicht-btn").addEventListener("click", () => {
   ansichtSetzen(aktiveAnsicht === "liste" ? "kacheln" : "liste");

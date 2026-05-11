@@ -768,6 +768,17 @@
   </style>
 </head>
 <body>
+<!-- ── DEBUG-PANEL (temporär zum Testen – später entfernen) ── -->
+<div id="debugPanel" style="display:none;position:fixed;bottom:0;left:0;right:0;z-index:99999;
+  background:rgba(0,0,0,.88);color:#0f0;font-size:11px;font-family:monospace;
+  padding:8px;max-height:180px;overflow-y:auto;line-height:1.5;">
+  <div style="display:flex;justify-content:space-between;margin-bottom:4px;">
+    <b style="color:#ff0">🔍 Debug-Log</b>
+    <button onclick="document.getElementById('debugPanel').style.display='none'"
+      style="background:#f00;color:#fff;border:none;border-radius:4px;padding:2px 8px;cursor:pointer">✕</button>
+  </div>
+  <div id="debugLog"></div>
+</div>
 
 <!-- ════════════════════════════════════════════════════════
      KONFIGURATION  –  Bitte einmal eintragen
@@ -956,6 +967,34 @@ let alleZeilen  = [];   // Alle Sheet-Zeilen
 let gefiltertZeilen  = [];
 let tokenClient    = null;
 let accessToken    = null;
+
+// ── Debug-Logging (temporär) ──
+function dbg(msg, color) {
+  const panel = document.getElementById('debugPanel');
+  const log = document.getElementById('debugLog');
+  if (!panel || !log) return;
+  panel.style.display = 'block';
+  const line = document.createElement('div');
+  line.style.color = color || '#0f0';
+  line.textContent = new Date().toLocaleTimeString('de') + ' ' + msg;
+  log.appendChild(line);
+  log.scrollTop = log.scrollHeight;
+}
+// GAS-Proxy direkt testen
+async function testGasProxy() {
+  dbg('▶ Teste GAS-Proxy...', '#ff0');
+  if (!GAS_PROXY_URL) { dbg('❌ GAS_PROXY_URL ist leer!', '#f00'); return; }
+  try {
+    const testUrl = GAS_PROXY_URL + '?token=' + encodeURIComponent(GAS_PROXY_SECRET) + '&id=test123';
+    dbg('URL: ' + GAS_PROXY_URL.substring(0, 60) + '...', '#aaa');
+    const r = await fetch(testUrl);
+    dbg('HTTP Status: ' + r.status, r.ok ? '#0f0' : '#f00');
+    const txt = await r.text();
+    dbg('Antwort: ' + txt.substring(0, 120), '#0ff');
+  } catch(e) {
+    dbg('❌ Fetch-Fehler: ' + e.message, '#f00');
+  }
+}
 
 // ── GAS Thumbnail-Proxy ──────────────────────────────────────────────────────
 // Nach dem Deployen von ThumbnailProxy.gs hier die Web-App-URL + Secret eintragen.
@@ -1587,15 +1626,22 @@ function bildZeigen(img, url, fileId) {
 async function ladeViaGasProxy(fileId) {
   if (!GAS_PROXY_URL || !fileId) return null;
   try {
+    dbg('📡 GAS: ' + fileId.substring(0,12) + '...', '#ff0');
     const url = GAS_PROXY_URL
       + '?id=' + encodeURIComponent(fileId)
       + '&token=' + encodeURIComponent(GAS_PROXY_SECRET);
     const resp = await fetch(url);
+    dbg('GAS Status: ' + resp.status + ' für ' + fileId.substring(0,8), resp.ok ? '#0f0' : '#f00');
     if (!resp.ok) return null;
     const json = await resp.json();
-    if (!json.ok || !json.data) return null;
+    if (!json.ok || !json.data) {
+      dbg('GAS Fehler: ' + (json.error || 'kein data'), '#f00');
+      return null;
+    }
+    dbg('✅ GAS OK: ' + Math.round(json.data.length/1024) + ' KB', '#0f0');
     return 'data:' + (json.mime || 'image/jpeg') + ';base64,' + json.data;
   } catch(e) {
+    dbg('❌ GAS Exception: ' + e.message, '#f00');
     console.warn('[HV] GAS-Proxy fehlgeschlagen:', fileId, e.message);
     return null;
   }

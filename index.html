@@ -1458,15 +1458,16 @@ const HvThumbCache = {
 // Gecachtes Thumbnail laden oder neu holen
 async function hvGetThumbCached(fileId, modifiedTime) {
   if (!fileId) return null;
-  // In-Memory-Cache (thumbCache) zuerst
-  if (thumbCache[fileId]) return thumbCache[fileId];
-  // IndexedDB prüfen
+  // In-Memory-Cache (thumbCache) zuerst – nur data: URLs (http-URLs laufen ab)
+  if (thumbCache[fileId] && thumbCache[fileId].startsWith('data:')) return thumbCache[fileId];
+  // IndexedDB prüfen – nur data: URLs verwenden, veraltete http-Einträge ignorieren
   const cached = await HvThumbCache.get(fileId);
-  if (cached && (!modifiedTime || cached.modifiedTime === modifiedTime)) {
+  if (cached && cached.dataUrl && cached.dataUrl.startsWith('data:') &&
+      (!modifiedTime || cached.modifiedTime === modifiedTime)) {
     thumbCache[fileId] = cached.dataUrl;
     return cached.dataUrl;
   }
-  return null;  // Kein Cache-Treffer
+  return null;  // Kein gültiger Cache-Treffer
 }
 async function hvCacheThumb(fileId, dataUrl, modifiedTime) {
   thumbCache[fileId] = dataUrl;
@@ -1584,37 +1585,34 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
       img.style.opacity = 1;
       const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
       if (ph) ph.style.display = 'none';
-      // Persistenter Cache: wenn die URL direkt geladen hat (z.B. drive.google.com/thumbnail
-      // mit Desktop-Cookies), URL in IndexedDB schreiben damit der nächste Seitenaufruf
-      // sofort aus Cache bedient wird — ohne erneuten Request an Google-Server.
-      if (url && url.startsWith('http') && !thumbCache[fileId]) {
-        thumbCache[fileId] = url;
-        hvCacheThumb(fileId, url, '').catch(() => {});
-      }
+      // Nur data: URLs in IndexedDB cachen – http-URLs laufen bei Google nach wenigen
+      // Stunden ab und würden beim nächsten Besuch neu geladen werden müssen.
+      // http-URLs werden ausschließlich im In-Memory-Cache (thumbCache) gehalten.
     };
     img.onerror = async () => {
-      // Fallback: Drive API mit Bearer-Token → verkleinerte Thumbnail-Data-URL (~25 KB statt 5 MB)
+      // Bild-URL abgelaufen → kleines Thumbnail via thumbnailLink holen (~50 KB, kein Vollbild)
       if (fileId && accessToken && !img.dataset.apiFallback) {
         img.dataset.apiFallback = "1";
         try {
-          const dataUrl = await ladeAlsThumbDataUrl(fileId);
-          await hvCacheThumb(fileId, dataUrl, '');
-          thumbCache[fileId] = dataUrl;
-          img.src = dataUrl;
-          // Safari/iOS-Fix: img.onload feuert nicht wenn src im onerror-Handler
-          // geändert wird → opacity und Placeholder hier explizit setzen.
-          img.decode().then(() => {
-            img.style.opacity = 1;
-            const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
-            if (ph2) ph2.style.display = 'none';
-          }).catch(() => {
-            // decode() nicht unterstützt oder Bild trotzdem fehlerhaft
-            img.style.opacity = 1;
-            const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
-            if (ph2) ph2.style.display = 'none';
-          });
-          return;
-        } catch(e2) { console.warn('[HV] Drive-API-Fallback fehlgeschlagen:', fileId, e2.message); }
+          // Zuerst frischen thumbnailLink per API holen (klein, schnell)
+          const dataUrl = await ladeAlsThumbViaLink(fileId);
+          if (dataUrl) {
+            await hvCacheThumb(fileId, dataUrl, '');
+            thumbCache[fileId] = dataUrl;
+            img.src = dataUrl;
+            // Safari/iOS-Fix: img.onload feuert nicht wenn src im onerror-Handler gesetzt wird
+            img.decode().then(() => {
+              img.style.opacity = 1;
+              const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+              if (ph2) ph2.style.display = 'none';
+            }).catch(() => {
+              img.style.opacity = 1;
+              const ph2 = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
+              if (ph2) ph2.style.display = 'none';
+            });
+            return;
+          }
+        } catch(e2) { console.warn('[HV] thumbnailLink-Fallback fehlgeschlagen:', fileId, e2.message); }
       }
       img.style.opacity = 0;
       const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');

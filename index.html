@@ -1377,7 +1377,7 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
             const d = await ladeViaGasProxy(fileId);
             if (d) { await hvCacheThumb(fileId,d,''); thumbCache[fileId]=d; img.src=d; img.decode().then(()=>{img.style.opacity=1;const p2=img.parentElement&&img.parentElement.querySelector('.karte-bild-placeholder');if(p2)p2.style.display='none';}).catch(()=>{img.style.opacity=1;}); return; }
           }
-          if (accessToken) { const d=await ladeAlsDataUrl(fileId); await hvCacheThumb(fileId,d,''); thumbCache[fileId]=d; img.src=d; return; }
+          if (accessToken) { const raw=await ladeAlsThumbDataUrl(fileId); const d=await _resizeDataUrl(raw,400,0.72); await hvCacheThumb(fileId,d,''); thumbCache[fileId]=d; img.src=d; return; }
         } catch(e2) { console.warn('[HV] onerror:', e2.message); }
       }
       img.style.opacity = 0;
@@ -1404,14 +1404,25 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
   // 3. Vorschau-URL aus Sheet – NUR Desktop (iPhone: Google-CDN braucht Session-Cookies)
   if (!isMobile && vorschauUrl && vorschauUrl.startsWith('http')) {
     zeigeThumb(vorschauUrl);
+    // Im Hintergrund als data: URL in IndexedDB speichern → nächstes Mal sofort aus Cache
+    setTimeout(async () => {
+      if (thumbCache[fileId] && thumbCache[fileId].startsWith('data:')) return;
+      try {
+        let dataUrl = null;
+        if (accessToken) dataUrl = await ladeAlsThumbDataUrl(fileId);
+        else if (GAS_PROXY_URL) dataUrl = await ladeViaGasProxy(fileId);
+        if (dataUrl && dataUrl.startsWith('data:')) await hvCacheThumb(fileId, dataUrl, '');
+      } catch(e) { /* Hintergrund-Cache fehlgeschlagen – kein Problem */ }
+    }, 200);
     return;
   }
 
   // 4. GAS-Proxy: zuverlässig auf Handy – kein Cookie, kein CDN-Problem
   if (GAS_PROXY_URL) {
     try {
-      const proxyUrl = await ladeViaGasProxy(fileId);
-      if (proxyUrl) {
+      const proxyRaw = await ladeViaGasProxy(fileId);
+      if (proxyRaw) {
+        const proxyUrl = await _resizeDataUrl(proxyRaw, 400, 0.72);
         await hvCacheThumb(fileId, proxyUrl, '');
         thumbCache[fileId] = proxyUrl;
         zeigeThumb(proxyUrl);
@@ -1419,10 +1430,10 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
       }
     } catch(e) { console.warn('[HV] GAS fehlgeschlagen:', fileId, e.message); }
   }
-  // 4b. Fallback Desktop: Drive API direkt
+  // 4b. Fallback: Drive API direkt (verkleinert auf 400px)
   if (accessToken) {
     try {
-      const dataUrl = await ladeAlsDataUrl(fileId);
+      const dataUrl = await ladeAlsThumbDataUrl(fileId);
       await hvCacheThumb(fileId, dataUrl, '');
       thumbCache[fileId] = dataUrl;
       zeigeThumb(dataUrl);
@@ -1487,6 +1498,27 @@ function galerieAnzeigen(zeilen) {
   }
 
   galerie.appendChild(fragment);
+}
+
+// ── Hilfsfunktion: beliebige data-URL auf maxPx verkleinern ──
+function _resizeDataUrl(dataUrl, maxPx, quality) {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return Promise.resolve(dataUrl);
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => {
+      let w = img.naturalWidth  || maxPx;
+      let h = img.naturalHeight || maxPx;
+      if (w <= maxPx && h <= maxPx) { resolve(dataUrl); return; }
+      if (w >= h) { h = Math.round(h * maxPx / w); w = maxPx; }
+      else        { w = Math.round(w * maxPx / h); h = maxPx; }
+      const canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      resolve(canvas.toDataURL('image/jpeg', quality || 0.72));
+    };
+    img.onerror = () => resolve(dataUrl);
+    img.src = dataUrl;
+  });
 }
 
 function escHtml(s) {

@@ -869,6 +869,9 @@ const modalLinkVoll   = document.getElementById("modal-link-vollbild");
 const modalLinkDrive  = document.getElementById("modal-link-drive");
 const modalKopieren   = document.getElementById("modal-link-kopieren");
 
+// ── Redirect-Rückkehr sofort prüfen ─────────────────────────
+pruefeRedirectRueckkehr();
+
 // ── Hilfsfunktionen ──────────────────────────────────────────
 function setStatus(text, typ) {
   statusBar.textContent = text;
@@ -918,6 +921,24 @@ function driveUrl(obj) {
 // ── Google Identity Services laden ───────────────────────────
 // gapi.js wird nicht mehr verwendet → kein COOP-Fehler mehr
 
+// ── Redirect-Rückkehr prüfen (Mobile-Login) ──────────────────
+// Wird sofort beim Seitenstart aufgerufen – liest access_token aus URL-Hash
+function pruefeRedirectRueckkehr() {
+  const hash = window.location.hash;
+  if (!hash || !hash.includes('access_token')) return;
+  const params = new URLSearchParams(hash.substring(1));
+  const token     = params.get('access_token');
+  const expiresIn = params.get('expires_in');
+  if (!token) return;
+  // Hash aus URL entfernen (sieht sauberer aus und verhindert Token-Leak)
+  window.history.replaceState({}, '', window.location.pathname);
+  accessToken  = token;
+  tokenExpires = Date.now() + (Number(expiresIn || 3600) - 60) * 1000;
+  hvTokenWarnVerstecken();
+  nutzerAnzeigen();
+  sheetLaden();
+}
+
 function gisGeladen() {
   if (CLIENT_ID === "HIER_IHRE_WEB_CLIENT_ID_EINTRAGEN") {
     setupHinweis.style.display = "block";
@@ -947,12 +968,23 @@ function gisGeladen() {
   });
 }
 
+function googleRedirectLogin(prompt) {
+  // Universeller Redirect-Flow – funktioniert auf allen Geräten und Browsern
+  const hint = localStorage.getItem('hv_user_email_v1') || '';
+  const params = new URLSearchParams({
+    client_id:              CLIENT_ID,
+    redirect_uri:           window.location.origin + window.location.pathname,
+    response_type:          'token',
+    scope:                  SCOPES,
+    include_granted_scopes: 'true',
+  });
+  if (hint)   params.set('login_hint', hint);
+  if (prompt) params.set('prompt', prompt);
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params;
+}
+
 function anmelden() {
-  if (!tokenClient) return;
-  var opts = {};
-  var hint = localStorage.getItem('hv_user_email_v1') || '';
-  if (hint) opts.login_hint = hint;
-  tokenClient.requestAccessToken(opts);
+  googleRedirectLogin('');
 }
 
 function tokenErhalten(response) {
@@ -982,12 +1014,7 @@ function tokenErhalten(response) {
 }
 
 function hvTokenErneuerung() {
-  if (!tokenClient) return;
-  tokenClient.callback = tokenErhalten;
-  var opts = {};
-  var hint = localStorage.getItem('hv_user_email_v1') || '';
-  if (hint) opts.login_hint = hint;
-  tokenClient.requestAccessToken(opts);
+  googleRedirectLogin('');
 }
 
 function hvTokenWarnZeigen(sekunden) {
@@ -1014,10 +1041,9 @@ setInterval(function() {
     hvTokenWarnZeigen(0);
     setStatus('⚠️ Google-Anmeldung abgelaufen – bitte oben erneuern.', 'fehler');
   } else if (msLeft < 5 * 60 * 1000) {
-    // Stille Erneuerung versuchen
+    // Token läuft in < 5 Min ab → Warnung zeigen, Nutzer muss selbst erneuern
     if (!_hvWarnActive) {
       hvTokenWarnZeigen(msLeft / 1000);
-      try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) { hvTokenWarnZeigen(0); }
     }
   } else {
     hvTokenWarnVerstecken();

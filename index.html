@@ -932,6 +932,8 @@ function pruefeRedirectRueckkehr() {
   if (!token) return;
   // Hash aus URL entfernen (sieht sauberer aus und verhindert Token-Leak)
   window.history.replaceState({}, '', window.location.pathname);
+  // Handoff speichern → PWA kann Token beim Wechsel zurück lesen
+  try { localStorage.setItem(_HV_OAUTH_HANDOFF_KEY, JSON.stringify({token, exp: Number(expiresIn||3600), ts: Date.now()})); } catch(e) {}
   accessToken  = token;
   tokenExpires = Date.now() + (Number(expiresIn || 3600) - 60) * 1000;
   hvTokenWarnVerstecken();
@@ -968,12 +970,16 @@ function gisGeladen() {
   });
 }
 
+function _hvGetRedirectUri() {
+  // index.html entfernen → URI immer identisch egal wie die Seite aufgerufen wurde
+  return window.location.origin + window.location.pathname.replace(/index\.html$/i, '');
+}
 function googleRedirectLogin(prompt) {
   // Universeller Redirect-Flow – funktioniert auf allen Geräten und Browsern
   const hint = localStorage.getItem('hv_user_email_v1') || '';
   const params = new URLSearchParams({
     client_id:              CLIENT_ID,
-    redirect_uri:           window.location.origin + window.location.pathname,
+    redirect_uri:           _hvGetRedirectUri(),
     response_type:          'token',
     scope:                  SCOPES,
     include_granted_scopes: 'true',
@@ -1196,6 +1202,13 @@ async function sheetLaden(erzwingen = false) {
     }
   }
 
+  // Kein Token → Anmeldeaufforderung zeigen statt 401-Fehler
+  if (!accessToken) {
+    setStatus("⚠ Bitte zuerst anmelden.", "fehler");
+    loginScreen.style.display = "flex";
+    return;
+  }
+
   galerieBereich.style.display = "none";
   const BATCH = 5000; // Zeilen pro Abfrage
   let startZeile = 2; // Überschrift in Zeile 1 überspringen
@@ -1215,6 +1228,15 @@ async function sheetLaden(erzwingen = false) {
       // Direkte Sheets API via fetch (kein gapi nötig → keine COOP-Fehler)
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(bereich)}`;
       const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (r.status === 401) {
+        // Token abgelaufen oder ungültig → neu anmelden
+        accessToken = null;
+        setStatus("⚠ Anmeldung abgelaufen – bitte erneut anmelden.", "fehler");
+        nutzerInfo.style.display = "none";
+        loginBtn.style.display = "block";
+        loginScreen.style.display = "flex";
+        return;
+      }
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.json()).error?.message || r.statusText}`);
       const data = await r.json();
       const zeilen = data.values || [];
@@ -1864,82 +1886,48 @@ async function pdfErstellen() {
     const x = RAND + col * (bW + RAND);
     const y = RAND + row * (bH + RAND);
     try {
-      const imgData = await ladeAlsDataUrl(ids[i]);
-      doc.addImage(imgData, "JPEG", x, y, bW, bH);
+      const dataUrl = await ladeAlsDataUrl(ids[i]);
+      const fmt = dataUrl.startsWith('data:image/png') ? 'PNG' : 'JPEG';
+      doc.addImage(dataUrl, fmt, x, y, bW, bH, '', 'FAST');
     } catch(e) {
-      console.warn("PDF Bild übersprungen:", ids[i], e);
+      console.warn('PDF-Fehler:', ids[i], e);
     }
   }
   verbergeExportFortschritt();
-  doc.save(`HV-Bilder-${new Date().toISOString().slice(0,10)}.pdf`);
+  doc.save(`hv-bilder-${ids.length}.pdf`);
 }
 
-// ── 360°-Viewer (Pannellum) ───────────────────────────────────
-let pannellumViewer = null;
-let aktuelleBlobUrl = null;
+// ── OAuth-Handoff für iOS-PWA (Standalone-Modus) ─────────────
+// Wenn die App als PWA am Homebildschirm läuft, öffnet Google den
+// Redirect in Safari. Der Token landet im Hash von Safari, nicht im PWA.
+// Lösung: Safari speichert den Token in localStorage; die PWA liest ihn
+// beim Wechsel zurück (visibilitychange / focus).
+const _HV_OAUTH_HANDOFF_KEY = 'hv_oauth_handoff_v1';
 
-const pannOverlay  = document.getElementById("pann-overlay");
-const pannContainer = document.getElementById("pann-container");
-const pannTitel    = document.getElementById("pann-titel");
-
-document.getElementById("pann-close").addEventListener("click", () => {
-  pannOverlay.classList.remove("aktiv");
-  document.body.style.overflow = "";
-  if (pannellumViewer) { try { pannellumViewer.destroy(); } catch(e){} pannellumViewer = null; }
-  if (aktuelleBlobUrl) { URL.revokeObjectURL(aktuelleBlobUrl); aktuelleBlobUrl = null; }
-  pannContainer.innerHTML = "";
-});
-
-document.getElementById("modal-btn-360").addEventListener("click", async () => {
-  if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
-  const obj = aktivesZeilenObj;
-
-  // Modal schließen, Overlay öffnen
-  modalSchliessen();
-  pannOverlay.classList.add("aktiv");
-  document.body.style.overflow = "hidden";
-  pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ 360°-Bild wird geladen …</div>';
-  pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
-
+function _hvCheckOauthHandoff() {
+  if (accessToken) return; // bereits angemeldet
+  const raw = localStorage.getItem(_HV_OAUTH_HANDOFF_KEY);
+  if (!raw) return;
   try {
-    // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
-    const resp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const blob = await resp.blob();
-    if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
-    aktuelleBlobUrl = URL.createObjectURL(blob);
-
-    pannContainer.innerHTML = "";
-    pannellumViewer = pannellum.viewer(pannContainer, {
-      type:         "equirectangular",
-      panorama:     aktuelleBlobUrl,
-      autoLoad:     true,
-      showZoomCtrl: true,
-      mouseZoom:    true,
-      hfov:         100,
-      strings:      { loadButtonLabel: "360° starten", loadingLabel: "Wird geladen …" },
-    });
-  } catch(e) {
-    pannContainer.innerHTML = `<div style="color:#f66;text-align:center;padding:30px">Fehler beim Laden: ` + e.message + `</div>`;
-  }
-});
-
-</script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
-<script>
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js')
-      .then(function(reg){ console.log('[SW] registriert:', reg.scope); })
-      .catch(function(e){ console.warn('[SW] Registrierung fehlgeschlagen (ignorierbar):', e.message); });
-  });
+    const h = JSON.parse(raw);
+    if (!h || !h.token) return;
+    if (Date.now() - h.ts > 300000) { // max. 5 Minuten alt
+      localStorage.removeItem(_HV_OAUTH_HANDOFF_KEY);
+      return;
+    }
+    localStorage.removeItem(_HV_OAUTH_HANDOFF_KEY);
+    accessToken  = h.token;
+    tokenExpires = Date.now() + (Number(h.exp || 3600) - 60) * 1000;
+    hvTokenWarnVerstecken();
+    nutzerAnzeigen();
+    sheetLaden();
+  } catch(e) {}
 }
-</script>
 
+document.addEventListener('visibilitychange', function() {
+  if (document.visibilityState === 'visible') _hvCheckOauthHandoff();
+});
+window.addEventListener('focus', _hvCheckOauthHandoff);
+</script>
 </body>
-</html>                                                                   
+</html>

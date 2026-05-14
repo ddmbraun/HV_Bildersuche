@@ -2,7 +2,7 @@
 // Cached: HTML + CDN-Bibliotheken (pannellum, JSZip, jsPDF)
 // Drive-API-Daten werden NICHT gecacht (brauchen Auth-Token)
 
-const CACHE_NAME = 'hv-bild-v1';
+const CACHE_NAME = 'hv-bild-v2'; // v2: script.google.com aus SW-Cache ausgeschlossen
 const PRECACHE = [
   './',
   './index.html',
@@ -34,13 +34,16 @@ self.addEventListener('activate', e => {
 
 // Fetch-Strategie:
 // - Google APIs (Drive, Sheets, accounts): immer Netzwerk (brauchen Auth)
+// - script.google.com (GAS-Proxy): immer Netzwerk – Thumbnails werden in
+//   IndexedDB gecacht, ein zusätzlicher SW-Cache wäre doppelter Speicher
 // - Alles andere: Cache first, dann Netzwerk
 self.addEventListener('fetch', e => {
   const url = e.request.url;
   // API-Aufrufe immer live
   if (url.includes('googleapis.com') ||
       url.includes('accounts.google.com') ||
-      url.includes('drive.google.com')) {
+      url.includes('drive.google.com') ||
+      url.includes('script.google.com')) {
     return; // Browser-Standard (kein SW-Cache)
   }
   e.respondWith(

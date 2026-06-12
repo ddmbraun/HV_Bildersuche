@@ -1,0 +1,16 @@
+{
+  "name": "HV Bild-Suche",
+  "short_name": "HV Bilder",
+  "description": "Durchsuchbare Foto-Datenbank der Hausverwaltung (18.000+ Bilder)",
+  "lang": "de",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#f1f3f4",
+  "theme_color": "#1a73e8",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

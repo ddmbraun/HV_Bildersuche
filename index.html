@@ -2,9 +2,16 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
+  <!-- PWA / iPhone-Installation (TODO M7) -->
+  <link rel="manifest" href="./manifest.json">
+  <meta name="theme-color" content="#1a73e8">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="HV Bilder">
+  <link rel="apple-touch-icon" href="./icons/icon-180.png">
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.css">
   <script src="https://accounts.google.com/gsi/client" defer onload="gisGeladen()"></script>
   <script src="https://cdn.jsdelivr.net/npm/pannellum@2.5.6/build/pannellum.js"></script>
@@ -377,7 +384,29 @@
       justify-content: center;
       background: #1a1a1a;
       min-height: 300px;
+      position: relative; /* M5: Anker für Navigations-Pfeile */
     }
+    /* M5: Vor/Zurück-Navigation im Modal */
+    .modal-nav {
+      position: absolute;
+      top: 50%;
+      transform: translateY(-50%);
+      background: rgba(0,0,0,.45);
+      color: #fff;
+      border: none;
+      font-size: 2rem;
+      line-height: 1;
+      padding: 14px 10px;
+      cursor: pointer;
+      border-radius: 8px;
+      z-index: 5;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .modal-nav:hover { background: rgba(0,0,0,.7); }
+    .modal-nav:disabled { opacity: .25; cursor: default; }
+    #modal-nav-prev { left: 10px; }
+    #modal-nav-next { right: 10px; }
     #modal-bild {
       max-width: 100%;
       max-height: 70vh;
@@ -728,6 +757,9 @@
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
   </div>
   <div id="galerie"></div>
+  <div id="mehr-laden-bereich" style="text-align:center;padding:18px 0;display:none">
+    <button id="mehr-laden-btn" class="sort-btn" style="display:inline-block;padding:10px 26px;font-size:.9rem">⬇ Weitere anzeigen</button>
+  </div>
   <div id="keine-ergebnisse">
     <div class="icon">🔍</div>
     <p>Keine Bilder gefunden für diesen Suchbegriff.</p>
@@ -772,8 +804,10 @@
       <button id="modal-close" title="Schließen">✕</button>
     </div>
     <div id="modal-bild-container">
+      <button id="modal-nav-prev" class="modal-nav" title="Vorheriges Bild (Pfeil links)">‹</button>
       <span id="modal-ladetext">Bild wird geladen …</span>
       <img id="modal-bild" src="" alt="" style="display:none">
+      <button id="modal-nav-next" class="modal-nav" title="Nächstes Bild (Pfeil rechts)">›</button>
     </div>
     <div id="modal-pfad"></div>
     <div id="modal-footer">
@@ -997,70 +1031,53 @@ function nutzerAnzeigen() {
 }
 
 function abmelden() {
-  google.accounts.oauth2.revoke(accessToken, () => {
-    accessToken = null;
-    alleZeilen  = [];
-    nutzerInfo.style.display = "flex";
-    loginBtn.style.display   = "block";
-    nutzerInfo.style.display = "none";
-    loginBtn.style.display   = "block";
-    galerieBereich.style.display = "none";
-    loginScreen.style.display    = "flex";
-    suchfeld.disabled = true;
-    suchfeld.value    = "";
-    aktiverPfad = ""; aktiverOrt = "";
-    setStatus("Abgemeldet.");
-  });
-}
+  // M3/G2: UI-Reset und Cache-Löschung laufen SOFORT und unabhängig vom
+  // revoke-Callback (der bei abgelaufenem Token u. U. nie feuert).
+  const token = accessToken;
 
-// ── localStorage-Cache ───────────────────────────────────────
-// Aktive Filter-Variablen (global deklariert damit alle Funktionen Zugriff haben)
-let aktiverPfad = "";
-let aktiverOrt   = "";
+  // 1. Sitzung im RAM beenden
+  accessToken      = null;
+  tokenExpires     = 0;
+  alleZeilen       = [];
+  gefiltertZeilen  = [];
+  aktivesZeilenObj = null;
+  Object.keys(thumbCache).forEach(k => delete thumbCache[k]);
 
-const CACHE_KEY = "hv_bild_cache_v1";
+  // 2. UI zurücksetzen
+  nutzerInfo.style.display     = "none";
+  loginBtn.style.display       = "block";
+  galerieBereich.style.display = "none";
+  loginScreen.style.display    = "flex";
+  galerie.innerHTML = "";
+  suchfeld.disabled = true;
+  suchfeld.value    = "";
+  hvTokenWarnVerstecken();
 
-function vorladenAlle(zeilen) {
-  // Alle Thumbnail-URLs still im Hintergrund vorladen (Browser-Cache waermen)
-  const fn = () => {
-    zeilen.forEach(row => {
-      const url = row[COL.vorschau] || '';
-      if (url && url.startsWith('http')) {
-        const img = new Image();
-        img.src = url;
-      }
-    });
-  };
-  if (typeof requestIdleCallback === 'function') {
-    requestIdleCallback(fn, { timeout: 8000 });
-  } else {
-    setTimeout(fn, 500);
-  }
-}
-
-function cacheSpeichern(zeilen) {
+  // 3. Lokale Caches löschen (Datenschutz auf geteilten Geräten:
+  //    Fotos + Adressdaten verschwinden vom Gerät)
+  try { localStorage.removeItem("hv_bild_cache_v1"); } catch(e) {}
+  try { localStorage.removeItem("hv_user_email_v1"); } catch(e) {}
   try {
-    // Kompaktes Format: nur fileId → ThumbnailURL (spart ~90% Speicher)
-    const map = {};
-    zeilen.forEach(row => {
-      const fid = row[COL.datei_id];
-      const url = row[COL.vorschau];
-      if (fid && url) map[fid] = url;
-    });
-    const eintrag = { ts: Date.now(), map };
-    localStorage.setItem(CACHE_KEY, JSON.stringify(eintrag));
-  } catch(e) {
-    console.warn("Cache konnte nicht gespeichert werden:", e);
+    if (HvThumbCache._db) { HvThumbCache._db.close(); HvThumbCache._db = null; }
+    if (HvDataCache._db)  { HvDataCache._db.close();  HvDataCache._db  = null; }
+    indexedDB.deleteDatabase("hv-thumb-cache-v1");
+    indexedDB.deleteDatabase("hv-data-cache-v1");
+  } catch(e) {}
+
+  // 4. Token bei Google widerrufen (Best-Effort)
+  if (token) {
+    try { google.accounts.oauth2.revoke(token, function(){}); } catch(e) {}
   }
+  setStatus("Abgemeldet – lokale Daten wurden gelöscht.");
 }
 
-function cacheLaden() {
-  try {
-    const raw = localStorage.getItem(CACHE_KEY);
-    if (!raw) return null;
-    return JSON.parse(raw);
-  } catch(e) { return null; }
-}
+// ── Aufgeräumt am 11.06.2026 ─────────────────────────────────
+// K1: vorladenAlle() entfernt (lud alle 18.000+ Thumbnails auf einmal vor –
+//     sichtbare Bilder lädt der IntersectionObserver rechtzeitig nach).
+// G1: localStorage-Map hv_bild_cache_v1 samt cacheSpeichern()/cacheLaden()
+//     entfernt (wurde geschrieben, aber nie gelesen), ebenso die Filter-
+//     Variablen aktiverPfad/aktiverOrt, dropdownsBefuellen(), bildZeigen()
+//     und suchen() (zugehörige UI-Elemente existierten nicht mehr).
 
 function cacheInfoAnzeigen(ts) {
   const el = document.getElementById("cache-info");
@@ -1070,47 +1087,6 @@ function cacheInfoAnzeigen(ts) {
 }
 
 // ── Sheet-Daten laden ────────────────────────────────────────
-function dropdownsBefuellen() {
-  const pfadSel = document.getElementById("pfad-filter");
-  const ortSel  = document.getElementById("ort-filter");
-  if (!pfadSel || !ortSel) return;
-
-  // Einzigartige Ordner-Wurzeln (erste 2 Ebenen des Pfads)
-  const pfadSet = new Set();
-  const ortSet  = new Set();
-  alleZeilen.forEach(row => {
-    const obj = zeilenObjekt(row);
-    if (obj.pfad) {
-      const teile = obj.pfad.split("/").map(t => t.trim()).filter(Boolean);
-      if (teile.length >= 2) pfadSet.add(teile.slice(0, 2).join("/"));
-      else if (teile.length === 1) pfadSet.add(teile[0]);
-    }
-    if (obj.ort) ortSet.add(obj.ort.trim());
-  });
-
-  // Ordner-Dropdown
-  pfadSel.innerHTML = '<option value="">— Alle Ordner (' + alleZeilen.length.toLocaleString("de") + ') —</option>';
-  [...pfadSet].sort().forEach(p => {
-    const opt = document.createElement("option");
-    opt.value = p;
-    opt.textContent = p;
-    pfadSel.appendChild(opt);
-  });
-
-  // Ort-Dropdown
-  ortSel.innerHTML = '<option value="">— Alle Orte —</option>';
-  [...ortSet].sort().forEach(o => {
-    const opt = document.createElement("option");
-    opt.value = o.toLowerCase();
-    opt.textContent = o;
-    ortSel.appendChild(opt);
-  });
-
-  // Filter-Button und Leiste aktivieren
-  const filterBtn = document.getElementById("filter-btn");
-  if (filterBtn) filterBtn.disabled = false;
-}
-
 async function sheetLaden(erzwingen = false) {
   loginScreen.style.display    = "none";
 
@@ -1124,9 +1100,7 @@ async function sheetLaden(erzwingen = false) {
       suchfeld.disabled = false;
       suchfeld.focus();
       galerieBereich.style.display = "block";
-      dropdownsBefuellen();
       sortiertAnzeigen(aktiveSortierung);
-      vorladenAlle(alleZeilen);
       // Hintergrund-Refresh wenn Cache > 24h alt
       const cacheAlterH = (Date.now() - cached.ts) / 3600000;
       if (cacheAlterH > 24) {
@@ -1154,7 +1128,7 @@ async function sheetLaden(erzwingen = false) {
     try {
       // Direkte Sheets API via fetch (kein gapi nötig → keine COOP-Fehler)
       const url = `https://sheets.googleapis.com/v4/spreadsheets/${SPREADSHEET_ID}/values/${encodeURIComponent(bereich)}`;
-      const r = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+      const r = await fetchMitAuth(url);  // M6: 401 → Token-Refresh + Retry
       if (!r.ok) throw new Error(`HTTP ${r.status}: ${(await r.json()).error?.message || r.statusText}`);
       const data = await r.json();
       const zeilen = data.values || [];
@@ -1169,18 +1143,15 @@ async function sheetLaden(erzwingen = false) {
     }
   }
 
-  // Cache speichern — IndexedDB für Zeilendaten + localStorage für Thumbnail-Map
+  // Cache speichern — IndexedDB für Zeilendaten
   await HvDataCache.speichern(alleZeilen);
-  cacheSpeichern(alleZeilen);
   cacheInfoAnzeigen(Date.now());
 
   setStatus(`✓ ${alleZeilen.length.toLocaleString("de")} Bilder geladen — Suchfeld aktiv.`);
   suchfeld.disabled = false;
   suchfeld.focus();
   galerieBereich.style.display = "block";
-  dropdownsBefuellen();
   sortiertAnzeigen(aktiveSortierung);
-  vorladenAlle(alleZeilen);
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
@@ -1208,34 +1179,36 @@ const HvThumbCache = {
       });
     } catch(e) { return null; }
   },
-  async put(fileId, dataUrl, modifiedTime) {
+  async put(fileId, blob, modifiedTime) {
     try {
       const db = await this._open();
       return new Promise(resolve => {
         const tx = db.transaction('thumbs','readwrite');
-        tx.objectStore('thumbs').put({ id: fileId, dataUrl, modifiedTime: modifiedTime || '' });
+        tx.objectStore('thumbs').put({ id: fileId, blob, modifiedTime: modifiedTime || '' });
         tx.oncomplete = () => resolve();
         tx.onerror = () => resolve();
       });
     } catch(e) {}
   }
 };
-// Gecachtes Thumbnail laden oder neu holen
-async function hvGetThumbCached(fileId, modifiedTime) {
+// Gecachtes Thumbnail laden (M1: Blobs; Altformat data:-URL wird weiter gelesen)
+async function hvGetThumbCached(fileId) {
   if (!fileId) return null;
-  // In-Memory-Cache (thumbCache) zuerst
   if (thumbCache[fileId]) return thumbCache[fileId];
-  // IndexedDB prüfen
   const cached = await HvThumbCache.get(fileId);
-  if (cached && (!modifiedTime || cached.modifiedTime === modifiedTime)) {
-    thumbCache[fileId] = cached.dataUrl;
-    return cached.dataUrl;
-  }
-  return null;  // Kein Cache-Treffer
+  if (!cached) return null;
+  let url = null;
+  if (cached.blob)         url = URL.createObjectURL(cached.blob);
+  else if (cached.dataUrl) url = cached.dataUrl;   // Altformat (vor M1)
+  if (url) thumbCache[fileId] = url;
+  return url;
 }
-async function hvCacheThumb(fileId, dataUrl, modifiedTime) {
-  thumbCache[fileId] = dataUrl;
-  await HvThumbCache.put(fileId, dataUrl, modifiedTime || '');
+// Thumbnail-Blob in RAM- + IndexedDB-Cache legen, Anzeige-URL zurueckgeben
+async function hvCacheThumb(fileId, blob, modifiedTime) {
+  const url = URL.createObjectURL(blob);
+  thumbCache[fileId] = url;
+  await HvThumbCache.put(fileId, blob, modifiedTime || '');
+  return url;
 }
 
 // ── HV-Sheet-Daten IndexedDB-Cache ──────────────────────────────────────────
@@ -1289,22 +1262,17 @@ const thumbObserver = new IntersectionObserver((entries) => {
 }, { rootMargin: "800px" });
 
 // Authentifiziertes Bild-Laden via Drive API v3 → Blob → ObjectURL (kein CORS-Problem)
+// M6: fetchMitAuth erneuert den Token automatisch bei 401
 async function ladeAlsBlobUrl(fileId) {
-  const r = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
   if (!r.ok) throw new Error("HTTP " + r.status);
   const blob = await r.blob();
   return URL.createObjectURL(blob);
 }
 
-// Wie ladeAlsBlobUrl, aber gibt persistente Base64-Data-URL zurück (für IndexedDB-Caching)
+// Wie ladeAlsBlobUrl, aber gibt persistente Base64-Data-URL zurück (für PDF-Export)
 async function ladeAlsDataUrl(fileId) {
-  const r = await fetch(
-    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-    { headers: { Authorization: `Bearer ${accessToken}` } }
-  );
+  const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
   if (!r.ok) throw new Error("HTTP " + r.status);
   const blob = await r.blob();
   return new Promise((resolve, reject) => {
@@ -1315,6 +1283,127 @@ async function ladeAlsDataUrl(fileId) {
   });
 }
 
+// ── Zentrale API-Hilfe (M6): fetch mit Token + Auto-Erneuerung bei 401 ──────
+let _tokenRefreshPromise = null;
+function erneuereTokenStill() {
+  if (_tokenRefreshPromise) return _tokenRefreshPromise;
+  _tokenRefreshPromise = new Promise((resolve, reject) => {
+    if (!tokenClient) { _tokenRefreshPromise = null; reject(new Error('Kein Token-Client')); return; }
+    const timer = setTimeout(() => {
+      _tokenRefreshPromise = null;
+      tokenClient.callback = tokenErhalten;
+      hvTokenWarnZeigen(0);
+      reject(new Error('Token-Erneuerung: Zeitüberschreitung'));
+    }, 15000);
+    tokenClient.callback = (resp) => {
+      clearTimeout(timer);
+      _tokenRefreshPromise = null;
+      tokenClient.callback = tokenErhalten;  // Standard-Callback wiederherstellen
+      if (resp.error) { hvTokenWarnZeigen(0); reject(new Error(resp.error)); return; }
+      accessToken  = resp.access_token;
+      tokenExpires = Date.now() + (Number(resp.expires_in || 3600) - 60) * 1000;
+      hvTokenWarnVerstecken();
+      resolve(accessToken);
+    };
+    try { tokenClient.requestAccessToken({ prompt: '' }); }
+    catch(e) {
+      clearTimeout(timer);
+      _tokenRefreshPromise = null;
+      tokenClient.callback = tokenErhalten;
+      reject(e);
+    }
+  });
+  return _tokenRefreshPromise;
+}
+
+async function fetchMitAuth(url, opts) {
+  opts = opts || {};
+  const anfrage = () => fetch(url, Object.assign({}, opts, {
+    headers: Object.assign({}, opts.headers || {}, { Authorization: 'Bearer ' + accessToken })
+  }));
+  let r = await anfrage();
+  if (r.status === 401) {
+    try { await erneuereTokenStill(); } catch(e) { return r; }
+    r = await anfrage();
+  }
+  return r;
+}
+
+// ── Kleines Thumbnail-Blob laden (M1) ───────────────────────────────────────
+// 1. Drive-Metadaten → thumbnailLink (~30 KB statt Vollbild)
+// 2. Fallback: Original laden und clientseitig auf 400px verkleinern
+async function ladeThumbBlob(fileId) {
+  try {
+    const metaR = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`);
+    if (metaR.ok) {
+      const meta = await metaR.json();
+      if (meta.thumbnailLink) {
+        const thumbUrl = meta.thumbnailLink.replace(/=s\d+(-c)?$/, '=s400');
+        const r = await fetch(thumbUrl);  // lh3.googleusercontent liefert i. d. R. CORS-Header
+        if (r.ok) return await r.blob();
+      }
+    }
+  } catch(e) { /* CORS o. ä. → Fallback unten */ }
+  const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
+  if (!r.ok) throw new Error('HTTP ' + r.status);
+  const original = await r.blob();
+  return await blobVerkleinern(original, 400);
+}
+
+// Bild-Blob proportional verkleinern (laengste Kante = maxPx), JPEG 85 %
+async function blobVerkleinern(blob, maxPx) {
+  const objUrl = URL.createObjectURL(blob);
+  try {
+    const img = await new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload  = () => resolve(i);
+      i.onerror = () => reject(new Error('Bild nicht dekodierbar'));
+      i.src = objUrl;
+    });
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if (w <= maxPx && h <= maxPx) return blob;  // schon klein genug
+    const f = maxPx / Math.max(w, h);
+    const canvas  = document.createElement('canvas');
+    canvas.width  = Math.round(w * f);
+    canvas.height = Math.round(h * f);
+    canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+    return await new Promise((resolve, reject) => {
+      canvas.toBlob(b => b ? resolve(b) : reject(new Error('Canvas-Export fehlgeschlagen')), 'image/jpeg', 0.85);
+    });
+  } finally {
+    URL.revokeObjectURL(objUrl);
+  }
+}
+
+// ── Hintergrund-Persistierung (M2) ──────────────────────────────────────────
+// Bilder, die ueber die Sheet-Vorschau-URL angezeigt wurden, zusaetzlich als
+// kleines Blob in IndexedDB sichern → iPhone laedt sie kuenftig aus dem Cache
+// statt jedes Mal neu von Google. Max. 2 parallel, still im Hintergrund.
+const _persistWarteschlange = [];
+let _persistAktiv = 0;
+function thumbPersistieren(fileId) {
+  if (!fileId || !accessToken) return;
+  if (_persistWarteschlange.includes(fileId)) return;
+  _persistWarteschlange.push(fileId);
+  _persistNaechstes();
+}
+async function _persistNaechstes() {
+  if (_persistAktiv >= 2 || _persistWarteschlange.length === 0) return;
+  const fileId = _persistWarteschlange.shift();
+  _persistAktiv++;
+  try {
+    const schonDa = await HvThumbCache.get(fileId);
+    if (!schonDa) {
+      const blob = await ladeThumbBlob(fileId);
+      await hvCacheThumb(fileId, blob);
+    }
+  } catch(e) { /* still scheitern – Anzeige laeuft bereits ueber die URL */ }
+  finally {
+    _persistAktiv--;
+    _persistNaechstes();
+  }
+}
+
 // EXIF-Strip via Canvas – entfernt GPS, Datum und alle Metadaten aus JPEG/PNG
 async function exifStrip(blob, qualitaet) {
   if (qualitaet === undefined) qualitaet = 0.93;
@@ -1323,11 +1412,20 @@ async function exifStrip(blob, qualitaet) {
     var img = new Image();
     img.onload = function() {
       URL.revokeObjectURL(objectUrl);
+      var w = img.naturalWidth, h = img.naturalHeight;
+      // G6: iOS-Safari-Canvas-Limit (~16,7 Mio. Pixel) – sehr große
+      // Panoramen proportional verkleinern statt still zu scheitern
+      var MAX_PIXEL = 16000000;
+      if (w * h > MAX_PIXEL) {
+        var f = Math.sqrt(MAX_PIXEL / (w * h));
+        w = Math.floor(w * f);
+        h = Math.floor(h * f);
+      }
       var canvas = document.createElement('canvas');
-      canvas.width  = img.naturalWidth;
-      canvas.height = img.naturalHeight;
+      canvas.width  = w;
+      canvas.height = h;
       var ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
+      ctx.drawImage(img, 0, 0, w, h);
       canvas.toBlob(function(result) {
         if (result) { resolve(result); }
         else { reject(new Error('Canvas-Export fehlgeschlagen')); }
@@ -1341,50 +1439,26 @@ async function exifStrip(blob, qualitaet) {
   });
 }
 
-function bildZeigen(img, url, fileId) {
-  const placeholder = img.parentElement ? img.parentElement.querySelector(".karte-bild-placeholder") : null;
-  img.onload  = () => {
-    img.style.opacity = 1;
-    if (placeholder) placeholder.style.display = "none";
-  };
-  img.onerror = async () => {
-    // Fallback: Drive API v3 mit Bearer-Token → kein CORS-Problem
-    if (fileId && accessToken && !img.dataset.apiFallback) {
-      img.dataset.apiFallback = "1";
-      try {
-        const blobUrl = await ladeAlsBlobUrl(fileId);
-        thumbCache[fileId] = blobUrl; // für spätere Aufrufe cachen
-        img.src = blobUrl;
-        return;
-      } catch(e) {
-        console.warn("API-Fallback fehlgeschlagen für", fileId, e.message);
-      }
-    }
-    img.style.opacity = 0;
-    if (placeholder) placeholder.style.display = "flex";
-    console.warn("Thumbnail-Fehler:", img.src.substring(0, 80));
-  };
-  img.src = url;
-}
-
 async function ladeThumbnail(img, fileId, vorschauUrl) {
   if (!fileId) return;
 
-  const zeigeThumb = (url) => {
+  // persistieren=true: Bild kam von extern (Sheet-URL) → im Hintergrund klein
+  // in IndexedDB sichern (M2), damit es beim naechsten Mal aus dem Cache kommt
+  const zeigeThumb = (url, persistieren) => {
     img.onload = () => {
       img.style.opacity = 1;
       const ph = img.parentElement && img.parentElement.querySelector('.karte-bild-placeholder');
       if (ph) ph.style.display = 'none';
+      if (persistieren) thumbPersistieren(fileId);
     };
     img.onerror = async () => {
-      // Fallback: Drive API mit Bearer-Token → persistente Data-URL
+      // Fallback: kleines Thumbnail via Drive API (M1: kein Vollbild mehr)
       if (fileId && accessToken && !img.dataset.apiFallback) {
         img.dataset.apiFallback = "1";
         try {
-          const dataUrl = await ladeAlsDataUrl(fileId);
-          await hvCacheThumb(fileId, dataUrl, '');
-          thumbCache[fileId] = dataUrl;
-          img.src = dataUrl;
+          const blob = await ladeThumbBlob(fileId);
+          const cacheUrl = await hvCacheThumb(fileId, blob, '');
+          img.src = cacheUrl;
           return;
         } catch(e2) { console.warn('[HV] Drive-API-Fallback fehlgeschlagen:', fileId, e2.message); }
       }
@@ -1397,59 +1471,64 @@ async function ladeThumbnail(img, fileId, vorschauUrl) {
 
   // 1. In-Memory-Cache
   if (thumbCache[fileId]) {
-    zeigeThumb(thumbCache[fileId]);
+    zeigeThumb(thumbCache[fileId], false);
     return;
   }
 
-  // 2. IndexedDB-Cache (nur data: URLs – blob: URLs sind nach Reload ungültig)
+  // 2. IndexedDB-Cache (Blob → ObjectURL; Altformat data:-URL)
   const cached = await hvGetThumbCached(fileId);
-  if (cached && cached.startsWith('data:')) {
-    thumbCache[fileId] = cached;
-    zeigeThumb(cached);
+  if (cached) {
+    zeigeThumb(cached, false);
     return;
   }
 
-  // 3. Vorschau-URL aus Sheet (schnell, mit automatischem Fallback bei Fehler)
+  // 3. Vorschau-URL aus Sheet (schnell) + Hintergrund-Persistierung (M2)
   if (vorschauUrl && vorschauUrl.startsWith('http')) {
-    zeigeThumb(vorschauUrl);
+    zeigeThumb(vorschauUrl, true);
     return;
   }
 
-  // 4. Letzter Ausweg: Drive API direkt → Data-URL
+  // 4. Letzter Ausweg: kleines Thumbnail via Drive API (M1)
   if (accessToken) {
     try {
-      const dataUrl = await ladeAlsDataUrl(fileId);
-      await hvCacheThumb(fileId, dataUrl, '');
-      thumbCache[fileId] = dataUrl;
-      zeigeThumb(dataUrl);
+      const blob = await ladeThumbBlob(fileId);
+      const cacheUrl = await hvCacheThumb(fileId, blob, '');
+      zeigeThumb(cacheUrl, false);
     } catch(e) { console.warn('[HV] Thumbnail fehlgeschlagen:', fileId, e.message); }
   }
 }
 
 // ── Galerie rendern ──────────────────────────────────────────
+let anzeigeLimit = 200; // G7: per "Weitere anzeigen"-Button erweiterbar
+
 function galerieAnzeigen(zeilen) {
   galerie.innerHTML = "";
-  const zeigeMax = Math.min(zeilen.length, 200); // Max. 200 Kacheln gleichzeitig
+  const zeigeMax = Math.min(zeilen.length, anzeigeLimit);
+  const mehrBereich = document.getElementById("mehr-laden-bereich");
 
   if (zeilen.length === 0) {
     keineErgebnisse.style.display = "block";
+    if (mehrBereich) mehrBereich.style.display = "none";
     ergebnisInfo.textContent = "";
     return;
   }
 
   keineErgebnisse.style.display = "none";
 
-  if (zeilen.length > 200) {
+  if (zeilen.length > zeigeMax) {
     ergebnisInfo.textContent =
-      `${zeilen.length.toLocaleString("de")} Ergebnisse – erste 200 werden angezeigt. Bitte Suche verfeinern.`;
+      `${zeilen.length.toLocaleString("de")} Ergebnisse – ${zeigeMax.toLocaleString("de")} angezeigt.`;
   } else {
     ergebnisInfo.textContent = `${zeilen.length.toLocaleString("de")} Bild${zeilen.length !== 1 ? "er" : ""}`;
   }
 
   const fragment = document.createDocumentFragment();
 
+  modalListe = [];  // M5: aktuell angezeigte Objekte für Vor/Zurück im Modal
+
   for (let i = 0; i < zeigeMax; i++) {
     const obj   = zeilenObjekt(zeilen[i]);
+    modalListe.push(obj);
     const karte = document.createElement("div");
     karte.className      = "karte";
     karte.dataset.idx    = i;
@@ -1477,12 +1556,25 @@ function galerieAnzeigen(zeilen) {
       e.stopPropagation();
       karte.classList.toggle("ausgeklappt");
     });
-    karte.querySelector(".karte-bild-wrapper").addEventListener("click", () => modalOeffnen(obj));
+    karte.querySelector(".karte-bild-wrapper").addEventListener("click", () => modalOeffnen(obj, i));
     thumbObserver.observe(karte);
     fragment.appendChild(karte);
   }
 
   galerie.appendChild(fragment);
+
+  // G7: "Weitere anzeigen"-Button statt hartem 200er-Limit
+  if (mehrBereich) {
+    const mehrBtn = document.getElementById("mehr-laden-btn");
+    if (zeilen.length > zeigeMax) {
+      const naechste = Math.min(200, zeilen.length - zeigeMax);
+      mehrBtn.textContent = `⬇ Weitere ${naechste.toLocaleString("de")} anzeigen (${zeigeMax.toLocaleString("de")} von ${zeilen.length.toLocaleString("de")})`;
+      mehrBtn.onclick = () => { anzeigeLimit += 200; galerieAnzeigen(zeilen); };
+      mehrBereich.style.display = "block";
+    } else {
+      mehrBereich.style.display = "none";
+    }
+  }
 }
 
 function escHtml(s) {
@@ -1500,22 +1592,27 @@ function kurzPfad(pfad) {
 }
 
 // ── Suche ────────────────────────────────────────────────────
-function suchen() {
-  filterAnwenden();
-}
-
 suchfeld.addEventListener("input", () => {
   clearTimeout(suchTimer);
   suchTimer = setTimeout(filterAnwenden, 280);
 });
 
 suchfeld.addEventListener("keydown", e => {
-  if (e.key === "Enter") { clearTimeout(suchTimer); suchen(); }
+  if (e.key === "Enter") { clearTimeout(suchTimer); filterAnwenden(); }
 });
 
 // ── Modal ────────────────────────────────────────────────────
-function modalOeffnen(obj) {
+let modalListe   = [];   // M5: angezeigte Objekte (für Vor/Zurück)
+let modalIndex   = -1;   // M5: Position des offenen Bilds in modalListe
+let modalBlobUrl = null; // M4: aktive Blob-URL des Modal-Bilds (zum Freigeben)
+
+function modalOeffnen(obj, idx) {
   aktivesZeilenObj = obj;
+  modalIndex = (typeof idx === "number") ? idx : modalListe.indexOf(obj);
+  // M5: Reste vom vorherigen Bild neutralisieren (stale Handler / Opacity)
+  modalBild.onload  = null;
+  modalBild.onerror = null;
+  modalBild.style.opacity = "1";
   modalStrasse.textContent = obj.adresse || obj.strasse || "(unbekannte Straße)";
   modalMeta.textContent    = [obj.ortZeile, obj.datum].filter(Boolean).join(" · ");
   // GPS-Koordinaten anzeigen (direkt aus Sheet, kein Geocoding nötig)
@@ -1566,6 +1663,8 @@ function modalOeffnen(obj) {
         modalLadetext.textContent = "Lade über Drive API …";
         try {
           const blobUrl = await ladeAlsBlobUrl(obj.datei_id);
+          if (modalBlobUrl) URL.revokeObjectURL(modalBlobUrl);  // M4: alte URL freigeben
+          modalBlobUrl = blobUrl;
           modalBild.src = blobUrl;
           return;
         } catch(e) {
@@ -1590,10 +1689,15 @@ function modalOeffnen(obj) {
       modalLadetext.style.display = "none";
     }
     ladeAlsBlobUrl(obj.datei_id).then(blobUrl => {
+      if (aktivesZeilenObj !== obj) { URL.revokeObjectURL(blobUrl); return; } // M5: schon weitergeblättert
+      if (modalBlobUrl) URL.revokeObjectURL(modalBlobUrl);  // M4: alte Blob-URL freigeben
+      modalBlobUrl = blobUrl;
       modalBild.dataset.apiFallback = "";
       modalBild.style.opacity = '1';
       zeigeModalBild(blobUrl);
     }).catch(e => {
+      if (aktivesZeilenObj !== obj) return;
+      modalBild.style.opacity = '1';  // M5: nicht bei 40 % Deckkraft hängen bleiben
       // Fallback: Vorschau-URL direkt zeigen
       if (obj.vorschau && obj.vorschau.startsWith('http')) {
         zeigeModalBild(obj.vorschau);
@@ -1612,12 +1716,16 @@ function modalOeffnen(obj) {
   modalOverlay.classList.add("aktiv");
   document.body.style.overflow = "hidden";
   cleanBtnAktualisieren();
+  modalNavAktualisieren();  // M5: Pfeil-Buttons aktivieren/deaktivieren
 }
 
 function modalSchliessen() {
   modalOverlay.classList.remove("aktiv");
   document.body.style.overflow = "";
+  modalBild.onload  = null;
+  modalBild.onerror = null;
   modalBild.src = "";
+  if (modalBlobUrl) { URL.revokeObjectURL(modalBlobUrl); modalBlobUrl = null; }  // M4
 }
 
 document.getElementById("modal-close").addEventListener("click", modalSchliessen);
@@ -1625,7 +1733,49 @@ document.getElementById("modal-close").addEventListener("click", modalSchliessen
 modalOverlay.addEventListener("click", e => { if (e.target === modalOverlay) modalSchliessen(); });
 // modal-box selbst stoppt Propagation → Klicks im Modal schließen es nie versehentlich
 document.getElementById("modal-box").addEventListener("click", e => e.stopPropagation());
-document.addEventListener("keydown", e => { if (e.key === "Escape") { modalSchliessen(); pannOverlay.classList.remove("aktiv"); } });
+
+// ── M5: Navigation im Modal (Pfeiltasten, Buttons, Wischen) ──
+function modalNavigieren(delta) {
+  if (!modalListe.length || modalIndex < 0) return;
+  const neu = modalIndex + delta;
+  if (neu < 0 || neu >= modalListe.length) return;
+  modalOeffnen(modalListe[neu], neu);
+}
+function modalNavAktualisieren() {
+  const prev = document.getElementById("modal-nav-prev");
+  const next = document.getElementById("modal-nav-next");
+  if (!prev || !next) return;
+  const ok = modalListe.length > 0 && modalIndex >= 0;
+  prev.disabled = !ok || modalIndex <= 0;
+  next.disabled = !ok || modalIndex >= modalListe.length - 1;
+}
+document.getElementById("modal-nav-prev").addEventListener("click", () => modalNavigieren(-1));
+document.getElementById("modal-nav-next").addEventListener("click", () => modalNavigieren(1));
+
+// Touch-Wischen (iPhone): > 60 px horizontal = Bildwechsel
+let _swipeStartX = null;
+const _modalBildContainer = document.getElementById("modal-bild-container");
+_modalBildContainer.addEventListener("touchstart", e => {
+  if (e.touches.length === 1) _swipeStartX = e.touches[0].clientX;
+}, { passive: true });
+_modalBildContainer.addEventListener("touchend", e => {
+  if (_swipeStartX === null) return;
+  const dx = e.changedTouches[0].clientX - _swipeStartX;
+  _swipeStartX = null;
+  if (Math.abs(dx) > 60) modalNavigieren(dx < 0 ? 1 : -1);
+}, { passive: true });
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") {
+    modalSchliessen();
+    if (pannOverlay.classList.contains("aktiv")) pannSchliessen();  // M4: 360° sauber beenden
+    return;
+  }
+  if (modalOverlay.classList.contains("aktiv")) {
+    if (e.key === "ArrowRight") modalNavigieren(1);
+    if (e.key === "ArrowLeft")  modalNavigieren(-1);
+  }
+});
 
 modalKopieren.addEventListener("click", () => {
   if (!aktivesZeilenObj) return;
@@ -1657,11 +1807,8 @@ btnClean.addEventListener("click", async () => {
   btnClean.disabled = true;
   btnClean.textContent = "⏳ Wird verarbeitet …";
   try {
-    // 1. Original-Blob laden
-    const r = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    // 1. Original-Blob laden (M6: mit Auto-Token-Refresh)
+    const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`);
     if (!r.ok) throw new Error("HTTP " + r.status);
     const originalBlob = await r.blob();
     // 2. EXIF entfernen via Canvas
@@ -1704,26 +1851,18 @@ function datumZuZahl(datumStr) {
 let aktiveSortierung = "neu"; // Standard: Neueste zuerst
 
 function aktiveZeilen() {
-  let basis = (suchfeld.value.trim() || aktiverPfad || aktiverOrt) ? gefiltertZeilen : alleZeilen;
-  return basis;
+  return suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
 }
 
 function filterAnwenden() {
-  const q       = suchfeld.value.trim().toLowerCase();
+  const q        = suchfeld.value.trim().toLowerCase();
   const begriffe = q ? q.split(/\s+/) : [];
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj  = zeilenObjekt(row);
     const text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
-    const textOk  = begriffe.every(b => text.includes(b));
-    const pfadOk  = !aktiverPfad || (obj.pfad || "").startsWith(aktiverPfad);
-    const ortOk   = !aktiverOrt  || (obj.ort  || "").toLowerCase() === aktiverOrt;
-    return textOk && pfadOk && ortOk;
+    return begriffe.every(b => text.includes(b));
   });
-  const info = document.getElementById("filter-info");
-  if (info) {
-    const aktiv = [aktiverPfad ? "Ordner" : "", aktiverOrt ? "Ort" : "", q ? "Suche" : ""].filter(Boolean);
-    info.textContent = aktiv.length ? "Aktiv: " + aktiv.join(", ") : "";
-  }
+  anzeigeLimit = 200;  // G7: neue Suche → Anzeige-Limit zurücksetzen
   sortiertAnzeigen(aktiveSortierung);
 }
 
@@ -1776,9 +1915,6 @@ document.getElementById("sort-reset").addEventListener("click", () => sortiertAn
 
 // Gespeicherte Ansicht beim Start anwenden
 ansichtSetzen(aktiveAnsicht);
-
-// Ordner- und Ort-Filter
-
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {
@@ -1897,22 +2033,36 @@ async function zipHerunterladen() {
   if (!accessToken) { alert("Bitte zuerst anmelden."); return; }
   const ids = [...ausgewaehlteIds];
   const zip = new JSZip();
+  // G5: Adresse je File-ID nachschlagen für sprechende Dateinamen
+  const objMap = {};
+  alleZeilen.forEach(row => {
+    const o = zeilenObjekt(row);
+    if (o.datei_id) objMap[o.datei_id] = o;
+  });
   let ok = 0, fehler = 0;
   for (let i = 0; i < ids.length; i++) {
     const fid = ids[i];
     zeigeExportFortschritt(`📦 Lade Bild ${i+1} von ${ids.length} …`);
     try {
-      const r = await fetch(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
+      const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fid}?alt=media`);
       if (!r.ok) throw new Error(r.status);
       const blob = await r.blob();
+      // G5: mehr Formate erkennen
       const ct = blob.type || "image/jpeg";
-      const ext = ct.includes("png") ? "png" : ct.includes("gif") ? "gif" : "jpg";
-      // EXIF entfernen (GPS, Datum, Kamera-Infos)
+      let ext = "jpg";
+      if (ct.includes("png")) ext = "png";
+      else if (ct.includes("gif")) ext = "gif";
+      else if (ct.includes("webp")) ext = "webp";
+      else if (ct.includes("heic") || ct.includes("heif")) ext = "heic";
+      // EXIF entfernen (GPS, Datum, Kamera-Infos) – Ergebnis ist immer JPEG
       let sauberBlob = blob;
-      try { sauberBlob = await exifStrip(blob); } catch(ex) { /* Original beibehalten */ }
-      zip.file(`bild_${String(i+1).padStart(3,"0")}.${ext}`, sauberBlob);
+      try { sauberBlob = await exifStrip(blob); ext = "jpg"; } catch(ex) { /* Original beibehalten */ }
+      // G5: Dateiname mit Adresse statt nur Nummer
+      const o = objMap[fid];
+      const basis = (o && (o.adresse || o.strasse))
+        ? (o.adresse || o.strasse).replace(/[^a-zA-Z0-9äöüÄÖÜß _-]/g, "_")
+        : "bild";
+      zip.file(`${String(i+1).padStart(3,"0")}_${basis}.${ext}`, sauberBlob);
       ok++;
     } catch(e) {
       fehler++;
@@ -1930,25 +2080,48 @@ async function zipHerunterladen() {
 }
 
 // ── PDF-Export (nur Bilder) ──────────────────────────────────
+// M8: EXIF/GPS wird entfernt (wie beim ZIP), Seitenverhältnis bleibt erhalten
 async function pdfErstellen() {
   if (ausgewaehlteIds.size === 0) return;
+  if (!accessToken) { alert("Bitte zuerst anmelden."); return; }
   const ids = [...ausgewaehlteIds];
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
   const W = 210, H = 297, RAND = 8, COLS = 2, ROWS = 2, PRO_SEITE = 4;
-  const bW = (W - RAND * (COLS + 1)) / COLS;
-  const bH = (H - RAND * (ROWS + 1)) / ROWS;
+  const zW = (W - RAND * (COLS + 1)) / COLS;  // Zellenbreite
+  const zH = (H - RAND * (ROWS + 1)) / ROWS;  // Zellenhöhe
   for (let i = 0; i < ids.length; i++) {
     zeigeExportFortschritt(`🖨️ Bild ${i+1} von ${ids.length} …`);
     const pos = i % PRO_SEITE;
     if (i > 0 && pos === 0) doc.addPage();
     const col = pos % COLS;
     const row = Math.floor(pos / COLS);
-    const x = RAND + col * (bW + RAND);
-    const y = RAND + row * (bH + RAND);
+    const x0 = RAND + col * (zW + RAND);
+    const y0 = RAND + row * (zH + RAND);
     try {
-      const imgData = await ladeAlsDataUrl(ids[i]);
-      doc.addImage(imgData, "JPEG", x, y, bW, bH);
+      // Original laden → EXIF/GPS entfernen → als JPEG einbetten
+      const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${ids[i]}?alt=media`);
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      let blob = await r.blob();
+      try { blob = await exifStrip(blob); } catch(ex) { /* Original einbetten */ }
+      const imgData = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload  = () => resolve(fr.result);
+        fr.onerror = () => reject(new Error("FileReader-Fehler"));
+        fr.readAsDataURL(blob);
+      });
+      // Bildmaße ermitteln → proportional in die Zelle einpassen, zentriert
+      const dim = await new Promise((resolve, reject) => {
+        const im = new Image();
+        im.onload  = () => resolve({ w: im.naturalWidth, h: im.naturalHeight });
+        im.onerror = () => reject(new Error("Bild nicht lesbar"));
+        im.src = imgData;
+      });
+      const f  = Math.min(zW / dim.w, zH / dim.h);
+      const bw = dim.w * f, bh = dim.h * f;
+      const x  = x0 + (zW - bw) / 2;
+      const y  = y0 + (zH - bh) / 2;
+      doc.addImage(imgData, "JPEG", x, y, bw, bh);
     } catch(e) {
       console.warn("PDF Bild übersprungen:", ids[i], e);
     }
@@ -1965,13 +2138,15 @@ const pannOverlay  = document.getElementById("pann-overlay");
 const pannContainer = document.getElementById("pann-container");
 const pannTitel    = document.getElementById("pann-titel");
 
-document.getElementById("pann-close").addEventListener("click", () => {
+// M4: zentrale Aufräum-Funktion – wird auch von ESC genutzt
+function pannSchliessen() {
   pannOverlay.classList.remove("aktiv");
   document.body.style.overflow = "";
   if (pannellumViewer) { try { pannellumViewer.destroy(); } catch(e){} pannellumViewer = null; }
   if (aktuelleBlobUrl) { URL.revokeObjectURL(aktuelleBlobUrl); aktuelleBlobUrl = null; }
   pannContainer.innerHTML = "";
-});
+}
+document.getElementById("pann-close").addEventListener("click", pannSchliessen);
 
 document.getElementById("modal-btn-360").addEventListener("click", async () => {
   if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
@@ -1986,10 +2161,7 @@ document.getElementById("modal-btn-360").addEventListener("click", async () => {
 
   try {
     // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
-    const resp = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`,
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const resp = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`);
     if (!resp.ok) throw new Error("HTTP " + resp.status);
     const blob = await resp.blob();
     if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);

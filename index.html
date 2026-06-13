@@ -317,12 +317,16 @@
       color: #9aa0a6;
       margin-top: 2px;
     }
-    .karte-quelle {
+    .karte-pfad {
       font-size: .72rem;
-      color: #7a8c99;
-      margin-top: 4px;
+      color: #7a8c99;  /* B7: war #b0b8c1, jetzt besser lesbar */
+      margin-top: 5px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      border-top: 1px solid var(--grau2);
+      padding-top: 5px;
     }
-    .karte-quelle.gps { color: #2e7a50; }
 
     /* ── Modal ───────────────────────────────────────────── */
     #modal-overlay {
@@ -612,6 +616,7 @@
     #galerie.liste .karte-details { max-height:none !important; padding:0 10px 4px !important; overflow:visible; }
     #galerie.liste .karte-strasse { font-size:.88rem; }
     #galerie.liste .karte-ort, #galerie.liste .karte-datum { font-size:.75rem; margin-top:1px; }
+    #galerie.liste .karte-pfad { display:none; }
     #galerie.liste .karte-badges { margin-top:2px; }
     #galerie.liste .karte:hover { transform:none; }
 
@@ -1538,7 +1543,7 @@ function galerieAnzeigen(zeilen) {
 
     const badges = [];
     if (obj.lat && obj.lon) badges.push(`<span class="karte-badge" title="GPS: ${escHtml(obj.lat)}, ${escHtml(obj.lon)}">📍 GPS</span>`);
-    const hatGps = !!(obj.lat && obj.lon);
+    if (obj.pfad) badges.push(`<span class="karte-badge" title="${escHtml(obj.pfad)}">📂 Pfad</span>`);
     karte.innerHTML = `
       <div class="karte-bild-wrapper">
         <img class="karte-bild" alt="${escHtml(obj.adresse)}">
@@ -1547,9 +1552,9 @@ function galerieAnzeigen(zeilen) {
       </div>
       <div class="karte-info">
         <div class="karte-strasse" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
-        <div class="karte-ort">${escHtml(obj.ort)}</div>
+        <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
-        <div class="karte-quelle ${hatGps ? 'gps' : ''}">${hatGps ? '📍 GPS' : '📂 Pfad'}</div>
+        ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
 
     // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal

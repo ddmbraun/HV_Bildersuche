@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
   <meta charset="UTF-8">
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://*.googleusercontent.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
   <!-- PWA / iPhone-Installation (TODO M7) -->
@@ -282,9 +282,11 @@
     .karte-strasse {
       font-weight: 600;
       font-size: .85rem;
-      white-space: nowrap;
+      /* B6: max. 2 Zeilen statt harter nowrap-Abschneidung */
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
       overflow: hidden;
-      text-overflow: ellipsis;
       color: var(--text);
     }
     .karte-toggle {
@@ -317,7 +319,7 @@
     }
     .karte-pfad {
       font-size: .72rem;
-      color: #b0b8c1;
+      color: #7a8c99;  /* B7: war #b0b8c1, jetzt besser lesbar */
       margin-top: 5px;
       white-space: nowrap;
       overflow: hidden;
@@ -885,6 +887,8 @@ function zeilenObjekt(row) {
     strasse,
     hausnummer,
     adresse:    hausnummer ? `${strasse} ${hausnummer}`.trim() : strasse,
+    // B5: letzter Ordnername als Fallback wenn keine Straße eingetragen
+    ordnerName: (!strasse && row[COL.pfad]) ? row[COL.pfad].split('/').filter(t => t.trim()).slice(-1)[0] || "" : "",
     plz,
     ort,
     ortZeile:   [plz, ort].filter(Boolean).join(" "),
@@ -1100,7 +1104,8 @@ async function sheetLaden(erzwingen = false) {
       suchfeld.disabled = false;
       suchfeld.focus();
       galerieBereich.style.display = "block";
-      sortiertAnzeigen(aktiveSortierung);
+      // A1: aktive Suche nach Cache-Load neu anwenden
+      if (suchfeld.value.trim()) filterAnwenden(); else sortiertAnzeigen(aktiveSortierung);
       // Hintergrund-Refresh wenn Cache > 24h alt
       const cacheAlterH = (Date.now() - cached.ts) / 3600000;
       if (cacheAlterH > 24) {
@@ -1151,7 +1156,8 @@ async function sheetLaden(erzwingen = false) {
   suchfeld.disabled = false;
   suchfeld.focus();
   galerieBereich.style.display = "block";
-  sortiertAnzeigen(aktiveSortierung);
+  // A1: aktive Suche nach Hintergrund-Refresh neu anwenden (sonst zeigt gefiltertZeilen veraltete Daten)
+  if (suchfeld.value.trim()) filterAnwenden(); else sortiertAnzeigen(aktiveSortierung);
 }
 
 // ── Thumbnail lazy-load via Drive API ───────────────────────
@@ -1545,7 +1551,7 @@ function galerieAnzeigen(zeilen) {
         ${badges.length ? `<div class="karte-badges">${badges.join('')}</div>` : ''}
       </div>
       <div class="karte-info">
-        <div class="karte-strasse" title="${escHtml(obj.adresse)}">${escHtml(obj.adresse || "(keine Straße)")}</div>
+        <div class="karte-strasse" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
         <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
         ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
@@ -1648,10 +1654,14 @@ function modalOeffnen(obj, idx) {
     modalBild.onload  = () => {
       modalLadetext.style.display = "none";
       modalBild.style.display = "block";
-      // 360°-Erkennung: Breite/Höhe ≈ 2:1
+      // 360°-Erkennung: Breite/Höhe ≈ 2:1 UND (falls prüfbar) GPano-Marker
       const ratio = modalBild.naturalWidth / modalBild.naturalHeight;
       if (ratio >= 1.8 && ratio <= 2.2) {
         btn360.style.display = "inline-flex";
+        pruefe360Marker(modalBild.src).then(ist360 => {
+          // C9: nur bei eindeutigem true sichtbar lassen; null (unlesbar) und false → verstecken
+          if (ist360 !== true) btn360.style.display = "none";
+        });
       } else {
         btn360.style.display = "none";
       }
@@ -1854,12 +1864,40 @@ function aktiveZeilen() {
   return suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
 }
 
+// A2: Stoppwörter die aus der Suche herausgefiltert werden
+const STOPPWOERTER = new Set(['und','oder','in','an','am','im','der','die','das','des','dem','den','ein','eine','einer','eines','von','vom','mit','bei','zu','zur','zum','aus','auf']);
+
+// A3: Straßen-Abkürzungen normalisieren (auf Suchbegriff und Datenbasis anwenden)
+function normalisiereStr(t) {
+  return t
+    .replace(/\bstr\.\s*/g, 'straße ')
+    .replace(/\bstr\b/g,    'straße')
+    .replace(/\bpl\.\s*/g,  'platz ')
+    .replace(/\bpl\b/g,     'platz')
+    .trim();
+}
+
 function filterAnwenden() {
-  const q        = suchfeld.value.trim().toLowerCase();
-  const begriffe = q ? q.split(/\s+/) : [];
+  const q = normalisiereStr(suchfeld.value.trim().toLowerCase());
+  // A4: Mindestlänge 3 Zeichen – darunter alle Bilder anzeigen
+  if (q.length < 3) {
+    gefiltertZeilen = [];
+    anzeigeLimit = 200;
+    sortiertAnzeigen(aktiveSortierung);
+    return;
+  }
+  // A2: Stoppwörter herausfiltern
+  const begriffe = q.split(/\s+/).filter(b => b.length > 0 && !STOPPWOERTER.has(b));
+  if (begriffe.length === 0) {
+    gefiltertZeilen = [];
+    anzeigeLimit = 200;
+    sortiertAnzeigen(aktiveSortierung);
+    return;
+  }
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj  = zeilenObjekt(row);
-    const text = [obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(" ").toLowerCase();
+    // A3: Datenbasis ebenfalls normalisieren für konsistenten Vergleich
+    const text = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(' ').toLowerCase());
     return begriffe.every(b => text.includes(b));
   });
   anzeigeLimit = 200;  // G7: neue Suche → Anzeige-Limit zurücksetzen
@@ -2148,22 +2186,80 @@ function pannSchliessen() {
 }
 document.getElementById("pann-close").addEventListener("click", pannSchliessen);
 
+// Prüft die ersten 512 KB auf den XMP-Marker gestitchter 360°-Fotos.
+// true = sicher 360 · false = sicher kein 360 (z. B. ungestitchtes Doppel-Fischauge)
+// null = nicht prüfbar (externe URL → CORS)
+async function pruefe360Marker(src) {
+  try {
+    if (!src || (!src.startsWith('blob:') && !src.startsWith('data:'))) return null;
+    const blob = await (await fetch(src)).blob();
+    const kopf = await blob.slice(0, 524288).text();
+    return (kopf.includes('GPano') || kopf.includes('equirectangular'));
+  } catch(e) { return null; }
+}
+
+// Größte WebGL-Texturbreite des Geräts (iPhone oft 4096/8192, PC meist 16384)
+function maxTexturGroesse() {
+  try {
+    const gl = document.createElement('canvas').getContext('webgl');
+    return gl ? gl.getParameter(gl.MAX_TEXTURE_SIZE) : 4096;
+  } catch(e) { return 4096; }
+}
+
 document.getElementById("modal-btn-360").addEventListener("click", async () => {
   if (!aktivesZeilenObj || !aktivesZeilenObj.datei_id) return;
   const obj = aktivesZeilenObj;
+
+  // C8: vorhandene Blob-URL aus Modal retten bevor modalSchliessen() sie revoked
+  const vorhandenerBlob = modalBlobUrl ? await (await fetch(modalBlobUrl)).blob().catch(() => null) : null;
+  modalBlobUrl = null; // verhindert Revoking in modalSchliessen()
 
   // Modal schließen, Overlay öffnen
   modalSchliessen();
   pannOverlay.classList.add("aktiv");
   document.body.style.overflow = "hidden";
   pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ 360°-Bild wird geladen …</div>';
-  pannTitel.textContent = (obj.adresse || obj.strasse || "360°-Ansicht");
+  pannTitel.textContent = (obj.adresse || obj.ordnerName || obj.strasse || "360°-Ansicht");
 
   try {
-    // Drive API v3 mit Bearer-Token → kein CORS-Problem (obj.original wäre drive.google.com/uc → CORS!)
-    const resp = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`);
-    if (!resp.ok) throw new Error("HTTP " + resp.status);
-    const blob = await resp.blob();
+    // C8: Blob aus Modal wiederverwenden wenn vorhanden, sonst neu laden
+    let blob;
+    if (vorhandenerBlob) {
+      blob = vorhandenerBlob;
+    } else {
+      // Drive API v3 mit Bearer-Token → kein CORS-Problem
+      const resp = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${obj.datei_id}?alt=media`);
+      if (!resp.ok) throw new Error("HTTP " + resp.status);
+      blob = await resp.blob();
+    }
+
+    // Ungestitchte Insta360-Rohbilder (Doppel-Fischauge) erkennen und abfangen
+    try {
+      const kopf = await blob.slice(0, 524288).text();
+      if (!kopf.includes('GPano') && !kopf.includes('equirectangular')) {
+        pannContainer.innerHTML = '<div style="color:#fc6;text-align:center;padding:30px;max-width:540px;margin:0 auto;line-height:1.5">⚠ Dieses Bild ist ein <b>ungestitchtes Insta360-Rohbild</b> (zwei Kreise).<br>Bitte in der Insta360-App bzw. Insta360 Studio als 360°-Foto exportieren und in Drive ersetzen.</div>';
+        return;
+      }
+    } catch(e) { /* Prüfung fehlgeschlagen → trotzdem versuchen */ }
+
+    // Auto-Verkleinerung: GPU-Texturlimit beachten (iPhone oft 8192 px –
+    // 11904 px breite Panoramen würden sonst gar nicht angezeigt)
+    try {
+      const glMax = maxTexturGroesse();
+      const dim = await new Promise((resolve, reject) => {
+        const u  = URL.createObjectURL(blob);
+        const im = new Image();
+        im.onload  = () => { URL.revokeObjectURL(u); resolve({ w: im.naturalWidth, h: im.naturalHeight }); };
+        im.onerror = () => { URL.revokeObjectURL(u); reject(new Error('nicht dekodierbar')); };
+        im.src = u;
+      });
+      if (dim.w > glMax) {
+        const ziel = Math.min(glMax, 5650); // 5650×2825 bleibt unterm iOS-Canvas-Limit
+        pannContainer.innerHTML = '<div style="color:#fff;text-align:center;padding:40px;font-size:16px">⏳ Panorama wird für dieses Gerät optimiert …</div>';
+        blob = await blobVerkleinern(blob, ziel);
+      }
+    } catch(e) { /* im Zweifel Original versuchen */ }
+
     if (aktuelleBlobUrl) URL.revokeObjectURL(aktuelleBlobUrl);
     aktuelleBlobUrl = URL.createObjectURL(blob);
 

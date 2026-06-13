@@ -3,7 +3,7 @@
 // CDN-Bibliotheken: Cache-first (ändern sich nie, Version steckt in der URL)
 // Drive-API-Daten werden NICHT gecacht (brauchen Auth-Token)
 
-const CACHE_NAME = 'hv-bild-v7'; // v7: Suche (Re-Filter, Stoppwörter, Normalisierung, Mindestlänge), Karten-Optik (Ordner-Fallback, 2-Zeilen-Adresse, Pfad-Farbe), 360°-Fix (Blob-Reuse, false-positive) · v6: GPano+Auto-Verkleinerung
+const CACHE_NAME = 'hv-bild-v8'; // v8: 360°-Button-Revert (=== false), Karten: nur Ort+Datum+GPS/Pfad-Indikator · v7: Suche+Karten-Optik · v6: GPano+Auto-Verkleinerung
 const PRECACHE = [
   './',
   './index.html',

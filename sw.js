@@ -3,7 +3,7 @@
 // CDN-Bibliotheken: Cache-first (ändern sich nie, Version steckt in der URL)
 // Drive-API-Daten werden NICHT gecacht (brauchen Auth-Token)
 
-const CACHE_NAME = 'hv-bild-v9'; // v9: Karten-Optik-Revert, 360°-Revert (=== false), scan.py: Distanz-Check+GPS-Nacherfassung+GPano-Einbettung · v8: (veraltet) · v7: Suche+Karten-Optik
+const CACHE_NAME = 'hv-bild-v11'; // v11: Karten-Layout neu (Symbole 📍📂 in Info-Zeile, Badges entfernt) · v10: ordnerName in Suche, Ratio 1.7, Auto-Login, GPS-Filter
 const PRECACHE = [
   './',
   './index.html',

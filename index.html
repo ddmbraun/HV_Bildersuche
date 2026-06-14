@@ -755,6 +755,8 @@
     <button class="sort-btn" id="sort-reset" title="Ursprüngliche Reihenfolge">↺ Standard</button>
     <button class="sort-btn" id="ansicht-btn" title="Listenansicht / Kachelansicht">☰ Liste</button>
     <button class="sort-btn" id="auswahl-modus-btn" title="Bilder auswählen">☑️ Auswählen</button>
+    <button class="sort-btn" id="filter-gps-btn" title="Nur Bilder mit GPS-Koordinaten">📍 Nur GPS</button>
+    <button class="sort-btn" id="filter-pfad-btn" title="Nur Bilder ohne GPS (Ordnerpfad-Fallback)">📂 Nur Ordnerpfad</button>
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
   </div>
@@ -943,12 +945,19 @@ function gisGeladen() {
         setStatus('ℹ Anmeldefenster geschlossen – bitte erneut auf „Anmelden" klicken.', 'fehler');
       } else if (err.type === 'immediate_failed') {
         setStatus('⚠ Automatische Anmeldung fehlgeschlagen – bitte auf „Anmelden" klicken.', 'fehler');
-        hvTokenWarnZeigen(0);
+        if (accessToken) hvTokenWarnZeigen(0); // nur bei Erneuerung zeigen, nicht beim initialen Start
       } else {
         setStatus('⚠ Google-Fehler: ' + (err.type || 'unbekannt'), 'fehler');
       }
     }
   });
+  // Auto-Login beim Start: wenn E-Mail gespeichert, sofort stillen Versuch starten
+  // (spart den ersten manuellen Klick; bei immediate_failed zeigt error_callback Hinweis)
+  var _autoHint = localStorage.getItem('hv_user_email_v1') || '';
+  if (_autoHint) {
+    try { tokenClient.requestAccessToken({ prompt: 'none', login_hint: _autoHint }); }
+    catch(e) { /* stiller Fehler – Nutzer klickt manuell */ }
+  }
 }
 
 function anmelden() {
@@ -1017,7 +1026,7 @@ setInterval(function() {
   if (msLeft <= 0) {
     hvTokenWarnZeigen(0);
     setStatus('⚠️ Google-Anmeldung abgelaufen – bitte oben erneuern.', 'fehler');
-  } else if (msLeft < 5 * 60 * 1000) {
+  } else if (msLeft < 10 * 60 * 1000) {
     // Stille Erneuerung versuchen
     if (!_hvWarnActive) {
       hvTokenWarnZeigen(msLeft / 1000);
@@ -1541,20 +1550,18 @@ function galerieAnzeigen(zeilen) {
     karte.dataset.fileId  = obj.datei_id;
     karte.dataset.vorschau = obj.vorschau || '';
 
-    const badges = [];
-    if (obj.lat && obj.lon) badges.push(`<span class="karte-badge" title="GPS: ${escHtml(obj.lat)}, ${escHtml(obj.lon)}">📍 GPS</span>`);
-    if (obj.pfad) badges.push(`<span class="karte-badge" title="${escHtml(obj.pfad)}">📂 Pfad</span>`);
     karte.innerHTML = `
       <div class="karte-bild-wrapper">
         <img class="karte-bild" alt="${escHtml(obj.adresse)}">
         <div class="karte-bild-placeholder">📷</div>
-        ${badges.length ? `<div class="karte-badges">${badges.join('')}</div>` : ''}
       </div>
       <div class="karte-info">
-        <div class="karte-strasse" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">
+          <div class="karte-strasse" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
+          <div style="flex-shrink:0;font-size:.82em;line-height:1.2">${(obj.lat && obj.lon ? '📍' : '') + (obj.pfad ? '📂' : '')}</div>
+        </div>
         <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
         <div class="karte-datum">${escHtml(obj.datum)}</div>
-        ${obj.pfad ? `<div class="karte-pfad" title="${escHtml(obj.pfad)}">📂 ${escHtml(kurzPfad(obj.pfad))}</div>` : ""}
       </div>`;
 
     // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal
@@ -1656,7 +1663,7 @@ function modalOeffnen(obj, idx) {
       modalBild.style.display = "block";
       // 360°-Erkennung: Breite/Höhe ≈ 2:1 UND (falls prüfbar) GPano-Marker
       const ratio = modalBild.naturalWidth / modalBild.naturalHeight;
-      if (ratio >= 1.8 && ratio <= 2.2) {
+      if (ratio >= 1.7 && ratio <= 2.2) {
         btn360.style.display = "inline-flex";
         pruefe360Marker(modalBild.src).then(ist360 => {
           // C9-rev: nur bei eindeutigem false verstecken; null (GPano unlesbar) → Button bleibt
@@ -1860,8 +1867,24 @@ function datumZuZahl(datumStr) {
 // ── Sortierung ────────────────────────────────────────────────
 let aktiveSortierung = "neu"; // Standard: Neueste zuerst
 
+let aktiverGeoFilter = null; // 'gps' | 'pfad' | null
+
+function geoFilterSetzen(modus) {
+  aktiverGeoFilter = (aktiverGeoFilter === modus) ? null : modus; // Klick auf aktiven = deaktivieren
+  document.getElementById('filter-gps-btn').classList.toggle('aktiv', aktiverGeoFilter === 'gps');
+  document.getElementById('filter-pfad-btn').classList.toggle('aktiv', aktiverGeoFilter === 'pfad');
+  if (suchfeld.value.trim().length >= 3) filterAnwenden();
+  else sortiertAnzeigen(aktiveSortierung);
+}
+
 function aktiveZeilen() {
-  return suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
+  let basis = suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
+  if (aktiverGeoFilter === 'gps') {
+    return basis.filter(r => { const o = zeilenObjekt(r); return o.lat && o.lon; });
+  } else if (aktiverGeoFilter === 'pfad') {
+    return basis.filter(r => { const o = zeilenObjekt(r); return !o.lat || !o.lon; });
+  }
+  return basis;
 }
 
 // A2: Stoppwörter die aus der Suche herausgefiltert werden
@@ -1897,7 +1920,7 @@ function filterAnwenden() {
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj  = zeilenObjekt(row);
     // A3: Datenbasis ebenfalls normalisieren für konsistenten Vergleich
-    const text = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.datum].join(' ').toLowerCase());
+    const text = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.ordnerName, obj.datum].join(' ').toLowerCase());
     return begriffe.every(b => text.includes(b));
   });
   anzeigeLimit = 200;  // G7: neue Suche → Anzeige-Limit zurücksetzen
@@ -1950,6 +1973,8 @@ document.getElementById("ansicht-btn").addEventListener("click", () => {
 document.getElementById("sort-neu").addEventListener("click", () => sortiertAnzeigen("neu"));
 document.getElementById("sort-alt").addEventListener("click", () => sortiertAnzeigen("alt"));
 document.getElementById("sort-reset").addEventListener("click", () => sortiertAnzeigen(""));
+document.getElementById("filter-gps-btn").addEventListener("click", () => geoFilterSetzen('gps'));
+document.getElementById("filter-pfad-btn").addEventListener("click", () => geoFilterSetzen('pfad'));
 
 // Gespeicherte Ansicht beim Start anwenden
 ansichtSetzen(aktiveAnsicht);

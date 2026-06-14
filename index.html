@@ -1556,12 +1556,15 @@ function galerieAnzeigen(zeilen) {
         <div class="karte-bild-placeholder">📷</div>
       </div>
       <div class="karte-info">
-        <div style="display:flex;justify-content:space-between;align-items:baseline;gap:4px">
-          <div class="karte-strasse" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
-          <div style="flex-shrink:0;font-size:.82em;line-height:1.2">${(obj.lat && obj.lon ? '📍' : '') + (obj.pfad ? '📂' : '')}</div>
+        <div class="karte-info-text">
+          <div style="display:flex;justify-content:space-between;align-items:center;gap:4px">
+            <div class="karte-strasse" style="min-width:0" title="${escHtml(obj.adresse || obj.ordnerName)}">${escHtml(obj.adresse || obj.ordnerName || "(kein Name)")}</div>
+            <div style="flex-shrink:0;font-size:.82em;line-height:1">${(obj.lat && obj.lon ? '📍' : '') + (obj.pfad ? '📂' : '')}</div>
+          </div>
+          <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
+          <div class="karte-datum">${escHtml(obj.datum)}</div>
         </div>
-        <div class="karte-ort">${escHtml(obj.ortZeile)}</div>
-        <div class="karte-datum">${escHtml(obj.datum)}</div>
+        <div class="karte-toggle">▾</div>
       </div>`;
 
     // Klick auf Info-Zeile → aus-/einklappen; Klick aufs Bild → Modal

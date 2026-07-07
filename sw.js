@@ -3,7 +3,7 @@
 // CDN-Bibliotheken: Cache-first (ändern sich nie, Version steckt in der URL)
 // Drive-API-Daten werden NICHT gecacht (brauchen Auth-Token)
 
-const CACHE_NAME = 'hv-bild-v12'; // v12: Karten-Layout Fix (karte-info-text + karte-toggle) · v11: Symbole in Info-Zeile
+const CACHE_NAME = 'hv-bild-v14'; // v14: Ordner-Browser (Drive-Struktur aus Spalte G, Drill-down + Breadcrumb) · v13: Bugfixes
 const PRECACHE = [
   './',
   './index.html',

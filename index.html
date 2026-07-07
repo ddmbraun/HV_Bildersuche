@@ -5,7 +5,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob:; script-src 'self' 'unsafe-inline' https://accounts.google.com https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; connect-src 'self' blob: https://*.googleapis.com https://accounts.google.com https://www.googleapis.com https://*.googleusercontent.com https://cdnjs.cloudflare.com https://cdn.jsdelivr.net; img-src 'self' data: blob: https://*.googleusercontent.com https://drive.google.com https://lh3.googleusercontent.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; frame-src https://accounts.google.com; worker-src blob: 'self';">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>HV Bild-Suche</title>
-  <!-- PWA / iPhone-Installation (TODO M7) -->
+  <!-- PWA / iPhone-Installation (M7) -->
   <link rel="manifest" href="./manifest.json">
   <meta name="theme-color" content="#1a73e8">
   <meta name="apple-mobile-web-app-capable" content="yes">
@@ -620,6 +620,89 @@
     #galerie.liste .karte-badges { margin-top:2px; }
     #galerie.liste .karte:hover { transform:none; }
 
+    /* ── Ordner-Browser (Drive-Struktur) ─────────────────────── */
+    #ordner-bereich { display: none; margin-bottom: 14px; }
+    #ordner-brotkrumen {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 2px;
+      font-size: .88rem;
+      color: var(--text2);
+      padding: 4px 2px 10px;
+    }
+    .brotkrume {
+      background: none;
+      border: none;
+      color: var(--blau);
+      cursor: pointer;
+      font-size: .88rem;
+      padding: 4px 6px;
+      border-radius: 6px;
+      max-width: 42vw;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .brotkrume:hover { background: var(--grau2); }
+    .brotkrume.aktuell { color: var(--text); font-weight: 600; cursor: default; }
+    .brotkrume.aktuell:hover { background: none; }
+    .brotkrumen-trenner { color: #9aa0a6; flex-shrink: 0; }
+    #ordner-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: 10px;
+    }
+    .ordner-kachel {
+      background: var(--card-bg);
+      border-radius: 10px;
+      box-shadow: var(--schatten);
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform .15s, box-shadow .15s;
+    }
+    .ordner-kachel:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 16px rgba(0,0,0,.18);
+    }
+    .ordner-kachel .karte-bild-wrapper { aspect-ratio: 16/9; }
+    .ordner-kachel .karte-bild-placeholder { font-size: 2rem; }
+    .ordner-kachel-info {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 8px 10px;
+    }
+    .ordner-kachel-icon { font-size: 1.1rem; flex-shrink: 0; }
+    .ordner-kachel-name {
+      flex: 1;
+      min-width: 0;
+      font-size: .85rem;
+      font-weight: 600;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .ordner-kachel-anzahl {
+      font-size: .72rem;
+      color: var(--text2);
+      background: var(--grau);
+      border-radius: 10px;
+      padding: 2px 8px;
+      flex-shrink: 0;
+      white-space: nowrap;
+    }
+    #ordner-bilder-trenner {
+      font-size: .82rem;
+      color: var(--text2);
+      padding: 14px 2px 0;
+      display: none;
+    }
+    @media (max-width: 600px) {
+      #ordner-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
+    }
+
     @media print {
       header, #status-bar, #login-screen, #auswahl-leiste,
       #ergebnis-leiste, #keine-ergebnisse, #modal-overlay { display: none !important; }
@@ -716,7 +799,7 @@
 
   <button id="login-btn">Mit Google anmelden</button>
   <div id="nutzer-info">
-    <img id="nutzer-bild" src="" alt="">
+    <img id="nutzer-bild" src="" alt="" style="display:none">
     <span id="nutzer-name"></span>
     <button id="logout-btn">Abmelden</button>
   </div>
@@ -754,11 +837,17 @@
     <button class="sort-btn" id="sort-alt" title="Älteste Bilder zuerst">📅 Älteste zuerst</button>
     <button class="sort-btn" id="sort-reset" title="Ursprüngliche Reihenfolge">↺ Standard</button>
     <button class="sort-btn" id="ansicht-btn" title="Listenansicht / Kachelansicht">☰ Liste</button>
+    <button class="sort-btn" id="ordner-modus-btn" title="Nach Drive-Ordnerstruktur durchblättern">📂 Ordner</button>
     <button class="sort-btn" id="auswahl-modus-btn" title="Bilder auswählen">☑️ Auswählen</button>
     <button class="sort-btn" id="filter-gps-btn" title="Nur Bilder mit GPS-Koordinaten">📍 Nur GPS</button>
     <button class="sort-btn" id="filter-pfad-btn" title="Nur Bilder ohne GPS (Ordnerpfad-Fallback)">📂 Nur Ordnerpfad</button>
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
+  </div>
+  <div id="ordner-bereich">
+    <div id="ordner-brotkrumen"></div>
+    <div id="ordner-grid"></div>
+    <div id="ordner-bilder-trenner"></div>
   </div>
   <div id="galerie"></div>
   <div id="mehr-laden-bereich" style="text-align:center;padding:18px 0;display:none">
@@ -1285,19 +1374,6 @@ async function ladeAlsBlobUrl(fileId) {
   return URL.createObjectURL(blob);
 }
 
-// Wie ladeAlsBlobUrl, aber gibt persistente Base64-Data-URL zurück (für PDF-Export)
-async function ladeAlsDataUrl(fileId) {
-  const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
-  if (!r.ok) throw new Error("HTTP " + r.status);
-  const blob = await r.blob();
-  return new Promise((resolve, reject) => {
-    const fr = new FileReader();
-    fr.onload = () => resolve(fr.result);
-    fr.onerror = () => reject(new Error("FileReader-Fehler"));
-    fr.readAsDataURL(blob);
-  });
-}
-
 // ── Zentrale API-Hilfe (M6): fetch mit Token + Auto-Erneuerung bei 401 ──────
 let _tokenRefreshPromise = null;
 function erneuereTokenStill() {
@@ -1608,13 +1684,15 @@ function kurzPfad(pfad) {
 }
 
 // ── Suche ────────────────────────────────────────────────────
+let _filterSofort = false;
 suchfeld.addEventListener("input", () => {
+  if (_filterSofort) { _filterSofort = false; return; }
   clearTimeout(suchTimer);
   suchTimer = setTimeout(filterAnwenden, 280);
 });
 
 suchfeld.addEventListener("keydown", e => {
-  if (e.key === "Enter") { clearTimeout(suchTimer); filterAnwenden(); }
+  if (e.key === "Enter") { clearTimeout(suchTimer); _filterSofort = true; filterAnwenden(); }
 });
 
 // ── Modal ────────────────────────────────────────────────────
@@ -1876,6 +1954,7 @@ function geoFilterSetzen(modus) {
   aktiverGeoFilter = (aktiverGeoFilter === modus) ? null : modus; // Klick auf aktiven = deaktivieren
   document.getElementById('filter-gps-btn').classList.toggle('aktiv', aktiverGeoFilter === 'gps');
   document.getElementById('filter-pfad-btn').classList.toggle('aktiv', aktiverGeoFilter === 'pfad');
+  anzeigeLimit = 200;
   if (suchfeld.value.trim().length >= 3) filterAnwenden();
   else sortiertAnzeigen(aktiveSortierung);
 }
@@ -1883,9 +1962,19 @@ function geoFilterSetzen(modus) {
 function aktiveZeilen() {
   let basis = suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
   if (aktiverGeoFilter === 'gps') {
-    return basis.filter(r => { const o = zeilenObjekt(r); return o.lat && o.lon; });
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return o.lat && o.lon; });
   } else if (aktiverGeoFilter === 'pfad') {
-    return basis.filter(r => { const o = zeilenObjekt(r); return !o.lat || !o.lon; });
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return !o.lat || !o.lon; });
+  }
+  // Ordner-Modus: nur Bilder des aktuellen Ordners zeigen
+  // (inkl. Unterordner, wenn ordnerInklUnter aktiv)
+  if (ordnerModus) {
+    const tiefe = ordnerPfadAktuell.length;
+    basis = basis.filter(r => {
+      const teile = pfadTeile(r[COL.pfad] || "");
+      if (!ordnerPrefixPasst(teile)) return false;
+      return ordnerInklUnter ? true : teile.length === tiefe;
+    });
   }
   return basis;
 }
@@ -1945,7 +2034,165 @@ function sortiertAnzeigen(sortierung) {
     basis.sort((a, b) => datumZuZahl(a[COL.datum]) - datumZuZahl(b[COL.datum]));
   }
   galerieAnzeigen(basis);
+  if (ordnerModus) ordnerRendern(basis.length);
 }
+
+// ── Ordner-Browser: Drive-Struktur aus Spalte G (Ordnerpfad) ─
+// Kein Drive-API-Aufruf nötig – der Baum entsteht aus den Sheet-Daten.
+let ordnerModus       = false;
+let ordnerPfadAktuell = [];    // z. B. ["Acada HV", "Musterstr. 12"]
+let ordnerInklUnter   = false; // true = Bilder aller Unterordner mit anzeigen
+
+function pfadTeile(pfad) {
+  return String(pfad).split("/").map(t => t.trim()).filter(Boolean);
+}
+
+function ordnerPrefixPasst(teile) {
+  for (let i = 0; i < ordnerPfadAktuell.length; i++) {
+    if (teile[i] !== ordnerPfadAktuell[i]) return false;
+  }
+  return true;
+}
+
+// Basis für die Ordner-Kacheln: Suche + Geo-Filter respektieren,
+// aber OHNE die Ebenen-Einschränkung (wir brauchen den ganzen Teilbaum)
+function ordnerTeilbaumZeilen() {
+  let basis = suchfeld.value.trim() ? gefiltertZeilen : alleZeilen;
+  if (aktiverGeoFilter === 'gps') {
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return o.lat && o.lon; });
+  } else if (aktiverGeoFilter === 'pfad') {
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return !o.lat || !o.lon; });
+  }
+  return basis.filter(r => ordnerPrefixPasst(pfadTeile(r[COL.pfad] || "")));
+}
+
+function ordnerRendern(bilderAnzahl) {
+  const bereich = document.getElementById("ordner-bereich");
+  const krumen  = document.getElementById("ordner-brotkrumen");
+  const grid    = document.getElementById("ordner-grid");
+  const trenner = document.getElementById("ordner-bilder-trenner");
+  if (!ordnerModus) { bereich.style.display = "none"; return; }
+  bereich.style.display = "block";
+
+  // ── Brotkrumen ──
+  krumen.innerHTML = "";
+  const heim = document.createElement("button");
+  heim.className = "brotkrume" + (ordnerPfadAktuell.length === 0 ? " aktuell" : "");
+  heim.textContent = "🏠 Alle Ordner";
+  heim.addEventListener("click", () => ordnerNavigieren(0));
+  krumen.appendChild(heim);
+  ordnerPfadAktuell.forEach((seg, i) => {
+    const t = document.createElement("span");
+    t.className = "brotkrumen-trenner";
+    t.textContent = "›";
+    krumen.appendChild(t);
+    const b = document.createElement("button");
+    b.className = "brotkrume" + (i === ordnerPfadAktuell.length - 1 ? " aktuell" : "");
+    b.textContent = seg;
+    b.title = seg;
+    b.addEventListener("click", () => ordnerNavigieren(i + 1));
+    krumen.appendChild(b);
+  });
+  // Umschalter: nur dieser Ordner / inkl. Unterordner
+  if (ordnerPfadAktuell.length > 0) {
+    const alleBtn = document.createElement("button");
+    alleBtn.className = "sort-btn" + (ordnerInklUnter ? " aktiv" : "");
+    alleBtn.style.marginLeft = "auto";
+    alleBtn.textContent = ordnerInklUnter ? "🖼 Inkl. Unterordner ✓" : "🖼 Inkl. Unterordner";
+    alleBtn.title = "Bilder aller Unterordner mit anzeigen";
+    alleBtn.addEventListener("click", () => {
+      ordnerInklUnter = !ordnerInklUnter;
+      anzeigeLimit = 200;
+      sortiertAnzeigen(aktiveSortierung);
+    });
+    krumen.appendChild(alleBtn);
+  }
+
+  // ── Unterordner der aktuellen Ebene ermitteln ──
+  const tiefe = ordnerPfadAktuell.length;
+  const unterordner = new Map(); // Name → {anzahl, fileId, vorschau}
+  ordnerTeilbaumZeilen().forEach(r => {
+    const teile = pfadTeile(r[COL.pfad] || "");
+    if (teile.length <= tiefe) return; // Bild liegt direkt hier, kein Unterordner
+    const name = teile[tiefe];
+    let e = unterordner.get(name);
+    if (!e) { e = { anzahl: 0, fileId: "", vorschau: "" }; unterordner.set(name, e); }
+    e.anzahl++;
+    if (!e.fileId && r[COL.datei_id]) {
+      e.fileId   = r[COL.datei_id];
+      e.vorschau = r[COL.vorschau] || "";
+    }
+  });
+
+  // ── Kacheln rendern (alphabetisch, deutsch sortiert) ──
+  grid.innerHTML = "";
+  const namen = [...unterordner.keys()].sort((a, b) => a.localeCompare(b, "de", { numeric: true }));
+  const frag = document.createDocumentFragment();
+  namen.forEach(name => {
+    const e = unterordner.get(name);
+    const kachel = document.createElement("div");
+    kachel.className = "ordner-kachel";
+    kachel.dataset.fileId   = e.fileId;
+    kachel.dataset.vorschau = e.vorschau;
+    kachel.innerHTML = `
+      <div class="karte-bild-wrapper">
+        <img class="karte-bild" alt="${escHtml(name)}">
+        <div class="karte-bild-placeholder">📂</div>
+      </div>
+      <div class="ordner-kachel-info">
+        <span class="ordner-kachel-icon">📂</span>
+        <span class="ordner-kachel-name" title="${escHtml(name)}">${escHtml(name)}</span>
+        <span class="ordner-kachel-anzahl">${e.anzahl.toLocaleString("de")}</span>
+      </div>`;
+    kachel.addEventListener("click", () => ordnerOeffnen(name));
+    if (e.fileId) thumbObserver.observe(kachel); // Vorschaubild lazy laden
+    frag.appendChild(kachel);
+  });
+  grid.appendChild(frag);
+
+  // ── Trenner zwischen Ordnern und Bildern ──
+  if (namen.length > 0 && bilderAnzahl > 0) {
+    trenner.textContent = ordnerInklUnter
+      ? `🖼 ${bilderAnzahl.toLocaleString("de")} Bilder in diesem Ordner (inkl. Unterordner):`
+      : `🖼 ${bilderAnzahl.toLocaleString("de")} Bilder direkt in diesem Ordner:`;
+    trenner.style.display = "block";
+  } else {
+    trenner.style.display = "none";
+  }
+  // "Keine Ergebnisse" unterdrücken, solange es Unterordner zum Weiterklicken gibt
+  if (namen.length > 0 && bilderAnzahl === 0) {
+    keineErgebnisse.style.display = "none";
+    ergebnisInfo.textContent = `${namen.length.toLocaleString("de")} Ordner`;
+  }
+}
+
+function ordnerOeffnen(name) {
+  ordnerPfadAktuell.push(name);
+  anzeigeLimit = 200;
+  sortiertAnzeigen(aktiveSortierung);
+  window.scrollTo({ top: 0 });
+}
+
+function ordnerNavigieren(ebene) {
+  ordnerPfadAktuell = ordnerPfadAktuell.slice(0, ebene);
+  anzeigeLimit = 200;
+  sortiertAnzeigen(aktiveSortierung);
+  window.scrollTo({ top: 0 });
+}
+
+function ordnerModusToggle() {
+  ordnerModus = !ordnerModus;
+  const btn = document.getElementById("ordner-modus-btn");
+  btn.classList.toggle("aktiv", ordnerModus);
+  document.getElementById("ordner-bereich").style.display = ordnerModus ? "block" : "none";
+  anzeigeLimit = 200;
+  suchfeld.placeholder = ordnerModus
+    ? "HV / Ordner suchen …"
+    : "Straße, Ort oder Stichwort eingeben …";
+  sortiertAnzeigen(aktiveSortierung);
+}
+
+document.getElementById("ordner-modus-btn").addEventListener("click", ordnerModusToggle);
 
 // Ansicht: Liste / Kacheln
 let aktiveAnsicht = localStorage.getItem("hv_ansicht") || "kacheln";

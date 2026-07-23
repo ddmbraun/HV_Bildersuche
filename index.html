@@ -795,6 +795,24 @@
        Die Knöpfe werden per JS UMGEHÄNGT, nicht verdoppelt:
        gleiche Elemente = gleiche Klick-Handler und gleicher
        Aktiv-Zustand, kein Abgleich nötig.                      */
+    /* R1: Zurücksetzen – bewusst IMMER sichtbar und nicht im Menü
+       versteckt (ausdrücklicher Wunsch Frank). Steht links vom Zahnrad. */
+    #reset-btn {
+      background: none;
+      border: 1px solid rgba(255,255,255,.5);
+      color: #fff;
+      border-radius: 6px;
+      padding: 3px 10px;
+      font-size: 1.05rem;
+      line-height: 1.4;
+      cursor: pointer;
+      /* gleiche Tippfläche wie das Zahnrad – das Zeichen ↺ ist
+         schmaler als ⚙️, ohne min-width wäre der Knopf kleiner */
+      min-width: 44px;
+      text-align: center;
+    }
+    #reset-btn:active { background: rgba(255,255,255,.18); }
+
     #einstellungen-btn {
       display: none;
       background: none;
@@ -946,6 +964,7 @@
     <img id="nutzer-bild" src="" alt="" style="display:none">
     <span id="nutzer-name"></span>
     <button id="logout-btn">Abmelden</button>
+    <button id="reset-btn" title="Alle Filter zurücksetzen" aria-label="Alle Filter zurücksetzen">↺</button>
     <button id="einstellungen-btn" title="Einstellungen" aria-label="Einstellungen">⚙️</button>
   </div>
 </header>
@@ -1039,7 +1058,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v23</div>
+    <div class="eins-version">HV Bild-Suche &middot; v24</div>
   </div>
 </div>
 
@@ -2891,6 +2910,54 @@ window.addEventListener("resize", () => {
 });
 
 zahnradUmbauen();
+
+// ── R1: Alle Filter zurücksetzen (23.07.2026) ────────────────
+// Wunsch Frank: EIN Knopf statt sieben einzelne Schalter – und
+// ausdrücklich oben in der Leiste, nicht im Zahnrad versteckt.
+//
+// Setzt bewusst auch die beiden GEMERKTEN Schalter zurück
+// ("Nur Ordnername" und Liste/Kacheln). Genau die überleben sonst
+// jeden Neustart, man vergisst sie – und wundert sich später über
+// zu wenige Treffer. Anmeldung und gespeicherte Bilder bleiben.
+function alleFilterZuruecksetzen() {
+  // 1. Suche
+  suchfeld.value  = "";
+  gefiltertZeilen = [];
+
+  // 2. Geo-Filter (Mit GPS / Ohne GPS)
+  aktiverGeoFilter = null;
+  document.getElementById("filter-gps-btn").classList.remove("aktiv");
+  document.getElementById("filter-pfad-btn").classList.remove("aktiv");
+
+  // 3. Suchbereich – gemerkter Schalter, muss auch im Speicher weg
+  nurOrdnerSuche = false;
+  try { localStorage.setItem("hv_nur_ordner", "0"); } catch(e) {}
+  suchbereichAnzeigen();
+
+  // 4. Ordner-Ebene zuerst leeren, dann den Modus abschalten –
+  //    sonst zeichnet der Umschalter noch die alte Ebene.
+  ordnerPfadAktuell = [];
+  ordnerInklUnter   = false;
+  if (ordnerModus) ordnerModusToggle();
+
+  // 5. Auswahl-Modus (leert auch die Markierungen)
+  if (auswahlModus) auswahlModusToggle();
+
+  // 6. Ansicht (ebenfalls gemerkt) + Sortierung auf Standard
+  ansichtSetzen("kacheln");
+  anzeigeLimit = 200;
+  sortiertAnzeigen("neu");
+
+  window.scrollTo({ top: 0 });
+  setStatus("↺ Alle Filter zurückgesetzt.");
+  setTimeout(function() {
+    if (alleZeilen.length) {
+      setStatus("✓ " + alleZeilen.length.toLocaleString("de") + " Bilder — Suchfeld aktiv.");
+    }
+  }, 2500);
+}
+
+document.getElementById("reset-btn").addEventListener("click", alleFilterZuruecksetzen);
 
 // ── Z3: Zurück-Knopf des Handys (23.07.2026) ─────────────────
 // Bisher verliess ein Druck auf "Zurück" die App komplett, weil sie

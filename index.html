@@ -973,8 +973,9 @@
     <button class="sort-btn" id="ansicht-btn" title="Listenansicht / Kachelansicht">☰ Liste</button>
     <button class="sort-btn" id="ordner-modus-btn" title="Nach Drive-Ordnerstruktur durchblättern">📂 Ordner</button>
     <button class="sort-btn" id="auswahl-modus-btn" title="Bilder auswählen">☑️ Auswählen</button>
-    <button class="sort-btn" id="filter-gps-btn" title="Nur Bilder mit GPS-Koordinaten">📍 Nur GPS</button>
-    <button class="sort-btn" id="filter-pfad-btn" title="Nur Bilder ohne GPS (Ordnerpfad-Fallback)">📂 Nur Ordnerpfad</button>
+    <button class="sort-btn" id="suche-ordner-btn" title="Nur im Ordnernamen suchen – die aus dem GPS abgeleiteten Adressen bleiben dann außen vor">🔎 Nur Ordnername</button>
+    <button class="sort-btn" id="filter-gps-btn" title="Nur Bilder, die GPS-Koordinaten haben">📍 Mit GPS</button>
+    <button class="sort-btn" id="filter-pfad-btn" title="Nur Bilder OHNE GPS – bei denen die Adresse aus dem Ordnernamen stammt">🚫 Ohne GPS</button>
     <button class="sort-btn" id="aktualisieren-btn" title="Daten neu aus Google Sheets laden">🔄 Aktualisieren</button>
     <span id="cache-info" style="font-size:11px;color:#888;margin-left:4px;"></span>
   </div>
@@ -1006,6 +1007,11 @@
   </div>
 
   <div class="eins-gruppe">
+    <div class="eins-titel">Suche</div>
+    <div class="eins-knoepfe" id="eins-suche"></div>
+  </div>
+
+  <div class="eins-gruppe">
     <div class="eins-titel">Sortierung</div>
     <div class="eins-knoepfe" id="eins-sortierung"></div>
   </div>
@@ -1022,7 +1028,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v20</div>
+    <div class="eins-version">HV Bild-Suche &middot; v21</div>
   </div>
 </div>
 
@@ -2162,6 +2168,31 @@ function datumZuZahl(datumStr) {
 // ── Sortierung ────────────────────────────────────────────────
 let aktiveSortierung = "neu"; // Standard: Neueste zuerst
 
+// ── A7: Suchbereich – nur im Ordnernamen suchen (23.07.2026) ──
+// Anlass: Suche "wilhelm külz" brachte auch Bilder aus "Gorkistraße 19".
+// Ursache war NICHT die Suche, sondern die Datenbasis: Die Adressspalte
+// entsteht aus dem GPS des Fotos. Bei ungenauem Empfang landet der Punkt
+// ein paar hundert Meter daneben – Gorkistraße 19 und Wilhelm-Külz-Straße
+// liegen 327 m auseinander, beide in Erfurt-Brühlervorstadt. Frank hat am
+// geöffneten Bild bestätigt, dass dort die falsche Adresse steht.
+// Mit diesem Schalter zählt nur noch der Ordnerpfad – also Franks eigene
+// Ablage, die im Gegensatz zum GPS verlässlich ist.
+let nurOrdnerSuche = localStorage.getItem("hv_nur_ordner") === "1";
+
+function suchbereichAnzeigen() {
+  const b = document.getElementById("suche-ordner-btn");
+  if (b) b.classList.toggle("aktiv", nurOrdnerSuche);
+}
+
+function suchbereichUmschalten() {
+  nurOrdnerSuche = !nurOrdnerSuche;
+  try { localStorage.setItem("hv_nur_ordner", nurOrdnerSuche ? "1" : "0"); } catch(e) {}
+  suchbereichAnzeigen();
+  anzeigeLimit = 200;
+  if (suchfeld.value.trim().length >= 3) filterAnwenden();
+  else sortiertAnzeigen(aktiveSortierung);
+}
+
 let aktiverGeoFilter = null; // 'gps' | 'pfad' | null
 
 function geoFilterSetzen(modus) {
@@ -2269,10 +2300,13 @@ function filterAnwenden() {
   });
 
   gefiltertZeilen = alleZeilen.filter(row => {
-    const obj  = zeilenObjekt(row);
+    const obj = zeilenObjekt(row);
     // A3: Datenbasis ebenfalls normalisieren für konsistenten Vergleich
-    const text  = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.ordnerName].join(' ').toLowerCase());
-    const datum = String(obj.datum || '').toLowerCase();
+    // A7: Bei "Nur Ordnername" zählt ausschließlich Franks eigene Ablage
+    const text  = nurOrdnerSuche
+      ? normalisiereStr(String(obj.pfad || '').toLowerCase())
+      : normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.ordnerName].join(' ').toLowerCase());
+    const datum = nurOrdnerSuche ? '' : String(obj.datum || '').toLowerCase();
     return pruefer.every(p => p.passt(text) || (p.imDatum && p.passt(datum)));
   });
   anzeigeLimit = 200;  // G7: neue Suche → Anzeige-Limit zurücksetzen
@@ -2573,6 +2607,8 @@ document.getElementById("sort-alt").addEventListener("click", () => sortiertAnze
 document.getElementById("sort-reset").addEventListener("click", () => sortiertAnzeigen(""));
 document.getElementById("filter-gps-btn").addEventListener("click", () => geoFilterSetzen('gps'));
 document.getElementById("filter-pfad-btn").addEventListener("click", () => geoFilterSetzen('pfad'));
+document.getElementById("suche-ordner-btn").addEventListener("click", suchbereichUmschalten);
+suchbereichAnzeigen();   // A7: gemerkte Einstellung beim Start anzeigen
 
 // Gespeicherte Ansicht beim Start anwenden
 ansichtSetzen(aktiveAnsicht);
@@ -2597,6 +2633,7 @@ ansichtSetzen(aktiveAnsicht);
 const _MOBIL_MQ = window.matchMedia("(max-width: 600px)");
 
 const _ZAHNRAD_TEILE = [
+  { id: "suche-ordner-btn",  gruppe: "suche"      },
   { id: "sort-neu",          gruppe: "sortierung" },
   { id: "sort-alt",          gruppe: "sortierung" },
   { id: "sort-reset",        gruppe: "sortierung" },
@@ -2674,6 +2711,45 @@ window.addEventListener("resize", () => {
 });
 
 zahnradUmbauen();
+
+// ── Z3: Zurück-Knopf des Handys (23.07.2026) ─────────────────
+// Bisher verliess ein Druck auf "Zurück" die App komplett, weil sie
+// keinen eigenen Verlauf führte – am Handy der häufigste Griff.
+// Jetzt nimmt "Zurück" immer die zuletzt geöffnete Ebene zurück.
+//
+// Bewusst ZUSTANDSBASIERT statt über einen Stapel gemerkter Schritte:
+// So ist es egal, ob vorher per ✕, per Tipp daneben oder per Esc
+// geschlossen wurde – Verlauf und Anzeige können nicht auseinanderlaufen.
+// Elemente werden per ID geholt, nicht über Konstanten, weil ein Teil
+// davon weiter unten im Code steht.
+function _zurueckAnker() {
+  try { history.pushState({ hv: 1 }, ""); } catch(e) {}
+}
+
+window.addEventListener("popstate", () => {
+  const offen = id => {
+    const e = document.getElementById(id);
+    return !!e && e.classList.contains("aktiv");
+  };
+
+  // Reihenfolge = von oben nach unten, das Zuletztgeöffnete zuerst
+  if (offen("pann-overlay"))  { pannSchliessen();  _zurueckAnker(); return; }
+  if (offen("modal-overlay")) { modalSchliessen(); _zurueckAnker(); return; }
+
+  const panel = document.getElementById("einstellungen-panel");
+  if (panel && panel.classList.contains("offen")) {
+    zahnradSchliessen(); _zurueckAnker(); return;
+  }
+  if (ordnerModus && ordnerPfadAktuell.length > 0) {
+    ordnerNavigieren(ordnerPfadAktuell.length - 1); _zurueckAnker(); return;
+  }
+  if (suchfeld.value.trim()) {
+    suchfeld.value = ""; filterAnwenden(); _zurueckAnker(); return;
+  }
+  // Nichts mehr offen → kein neuer Anker; der nächste Druck verlässt die App.
+});
+
+_zurueckAnker();
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {

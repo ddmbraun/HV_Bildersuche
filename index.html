@@ -1022,7 +1022,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v19</div>
+    <div class="eins-version">HV Bild-Suche &middot; v20</div>
   </div>
 </div>
 
@@ -2245,11 +2245,35 @@ function filterAnwenden() {
     sortiertAnzeigen(aktiveSortierung);
     return;
   }
+  // ── A6 (23.07.2026): Zahlen als ZAHL suchen, nicht als Zeichenfolge ──
+  // Befund Frank: Suche "alkenbrecher urbicher 13" brachte auch Bilder,
+  // bei denen die 13 gar keine Hausnummer war. Zwei Ursachen:
+  //   1) Ordner wie "Niedernissa/2013/AHV Urbicher Weg 11-17" – die 13
+  //      steckt im JAHR. Ebenso "113", "13.05.14" usw.
+  //   2) Die Datumsspalte wurde blind mitdurchsucht, also traf "13"
+  //      jedes Foto vom 13. eines beliebigen Monats.
+  // Lösung: Ein rein numerischer Begriff muss als eigenständige Zahl
+  // dastehen (nicht in einer längeren Zahl eingebettet), und die
+  // Datumsspalte wird nur noch für datumsartige Begriffe geprüft
+  // (vierstelliges Jahr oder etwas mit Punkt, z. B. "2015", "19.02.15").
+  // Die Prüfer werden EINMAL pro Suche gebaut, nicht pro Zeile –
+  // sonst entstünden bei 19.000 Zeilen ebenso viele RegExp-Objekte.
+  const pruefer = begriffe.map(b => {
+    if (/^\d+$/.test(b)) {
+      // "13" findet "Weg 13", "11-13" und "Weg_13_WHG",
+      // aber NICHT "2013", "113" oder "1300"
+      const re = new RegExp('(^|[^0-9])' + b + '([^0-9]|$)');
+      return { passt: t => re.test(t), imDatum: b.length === 4 };
+    }
+    return { passt: t => t.includes(b), imDatum: b.includes('.') };
+  });
+
   gefiltertZeilen = alleZeilen.filter(row => {
     const obj  = zeilenObjekt(row);
     // A3: Datenbasis ebenfalls normalisieren für konsistenten Vergleich
-    const text = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.ordnerName, obj.datum].join(' ').toLowerCase());
-    return begriffe.every(b => text.includes(b));
+    const text  = normalisiereStr([obj.adresse, obj.strasse, obj.hausnummer, obj.plz, obj.ort, obj.pfad, obj.ordnerName].join(' ').toLowerCase());
+    const datum = String(obj.datum || '').toLowerCase();
+    return pruefer.every(p => p.passt(text) || (p.imDatum && p.passt(datum)));
   });
   anzeigeLimit = 200;  // G7: neue Suche → Anzeige-Limit zurücksetzen
   sortiertAnzeigen(aktiveSortierung);

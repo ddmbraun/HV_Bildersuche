@@ -899,7 +899,18 @@
   // │  SPREADSHEET_ID + SHEET_NAME: bereits eingetragen,       │
   // │  passen Sie diese an falls nötig.                        │
   // └──────────────────────────────────────────────────────────┘
-  const CLIENT_ID       = "451736556171-r5r4ujv2ae16m7jc3scvn84i26rqe1gf.apps.googleusercontent.com";
+  // L1 (23.07.2026): GEMEINSAMER Ausweis mit PAM (Projekt ptp-workboard).
+  // Vorher hatte die Bild-Suche einen eigenen Client im Projekt
+  // hausverwaltung-bilder (451736556171-r5r4ujv2ae16m7jc3scvn84i26rqe1gf).
+  // Der konnte aber kein Dauer-Ticket ausstellen, weil die Cloud Function
+  // nur die PAM-Zugangsdaten kennt. Mit demselben Ausweis läuft die
+  // Anmeldung über dieselbe Cloud Function – ohne eine Zeile am Server.
+  // Der Python-Scanner bleibt unberührt: Er hat einen eigenen Desktop-
+  // Ausweis im Projekt hausverwaltung-bilder (dort ist "Intern" gesetzt).
+  const CLIENT_ID          = "56419258975-2ri3eujer9p6saph1mesa5hihlcae1pl.apps.googleusercontent.com";
+  const CLOUD_FUNCTION_URL = "https://europe-west1-ptp-workboard.cloudfunctions.net/oauthBridge";
+  const HV_REFRESH_KEY     = "hv_gdrive_refresh_token";  // eigener Schlüsselname – PAM liegt evtl. auf derselben Adresse
+  const HV_HANDOFF_KEY     = "hv_handoff_code";
   const SPREADSHEET_ID  = "13V5ftPAAlZ-L5IFXpRkdqoVaI8DZjzjsJuUvn5KKgOg";
   const SHEET_NAME      = "Datenbank_Hausverwaltung_Bilder_V2";
   const SCOPES          = "https://www.googleapis.com/auth/spreadsheets.readonly https://www.googleapis.com/auth/drive.readonly profile email";
@@ -1028,7 +1039,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v21</div>
+    <div class="eins-version">HV Bild-Suche &middot; v22</div>
   </div>
 </div>
 
@@ -1183,6 +1194,113 @@ function driveUrl(obj) {
   return obj.datei_id ? `https://drive.google.com/file/d/${obj.datei_id}/view` : "#";
 }
 
+// ══════════════════════════════════════════════════════════════
+// L1: DAUERHAFTE ANMELDUNG (23.07.2026)
+// ══════════════════════════════════════════════════════════════
+// Befund Frank: "Wenn ich die App schließe, muss ich mich komplett neu
+// anmelden." Ursache: Die App holte über initTokenClient nur einen
+// KURZZEIT-Schlüssel, der ausschließlich im Arbeitsspeicher lag – App
+// zu, Schlüssel weg. Zusätzlich lief er nach ~1 Stunde ab (Punkt N6).
+//
+// Lösung wie bei PAM Mobil (v119): Anmeldung über den Authorization-
+// Code-Weg; die Cloud Function tauscht den Code gegen ein DAUER-TICKET
+// (refresh_token). Das liegt dauerhaft im Gerätespeicher und erneuert
+// den Kurzzeit-Schlüssel selbsttätig – auch nach Tagen.
+//
+// Dazu das EINMAL-CODE-SCHLIESSFACH: Eine installierte App hat einen
+// anderen Speicherbereich als der Browser, in dem der Login abläuft.
+// Ohne diesen Umweg käme das Dauer-Ticket dort nie an, und die App
+// fragte bei jedem Start neu – genau der Fehler von PAM Mobil.
+//
+// Der alte GIS-Weg bleibt als Rückfall erhalten (normaler Browser).
+
+function _hvRedirectUri() {
+  return window.location.origin + window.location.pathname.replace(/index\.html$/i, '');
+}
+
+function _hvNeuerHandoffCode() {
+  const a = new Uint8Array(24); crypto.getRandomValues(a);
+  return btoa(String.fromCharCode.apply(null, a))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+// Dauer-Ticket aus dem Server-Schließfach abholen (nur einmal einlösbar)
+async function _hvHandoffEinloesen() {
+  try {
+    if (localStorage.getItem(HV_REFRESH_KEY)) return false;   // schon da
+    const code = localStorage.getItem(HV_HANDOFF_KEY);
+    if (!code) return false;
+    const r = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'claim', handoff_code: code })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (r.ok && d.refresh_token) {
+      try { localStorage.setItem(HV_REFRESH_KEY, d.refresh_token); } catch(e) {}
+      try { localStorage.removeItem(HV_HANDOFF_KEY); } catch(e) {}
+      return true;
+    }
+    // 404 = nicht vorhanden, 410 = abgelaufen → Code ist wertlos
+    if (r.status === 404 || r.status === 410) {
+      try { localStorage.removeItem(HV_HANDOFF_KEY); } catch(e) {}
+    }
+  } catch(e) {}
+  return false;
+}
+
+// Kurzzeit-Schlüssel per Dauer-Ticket erneuern – der Kern des Ganzen
+async function hvTokenViaCloud() {
+  let rt = localStorage.getItem(HV_REFRESH_KEY);
+  if (!rt && await _hvHandoffEinloesen()) rt = localStorage.getItem(HV_REFRESH_KEY);
+  if (!rt) return false;
+  try {
+    const r = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'refresh', refresh_token: rt })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || !d.access_token) {
+      const err = JSON.stringify((d && (d.error_description || d.error)) || '');
+      if (err.includes('invalid_grant')) {
+        // Ticket zurückgezogen/abgelaufen → wegwerfen, nächster Login holt ein neues
+        try { localStorage.removeItem(HV_REFRESH_KEY); } catch(e) {}
+      }
+      return false;
+    }
+    tokenErhalten({ access_token: d.access_token, expires_in: d.expires_in || 3600 }, true);
+    return true;
+  } catch(e) { return false; }
+}
+
+// Rückkehr von Google: Einmal-Code gegen die Tickets tauschen
+async function _hvCodeTauschen(code, handoffCode) {
+  try {
+    setStatus('Anmeldung wird abgeschlossen …', 'laden');
+    const r = await fetch(CLOUD_FUNCTION_URL, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'exchange', code: code, redirect_uri: _hvRedirectUri() })
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok || d.error || !d.access_token) throw new Error(d.error || ('Server ' + r.status));
+    if (d.refresh_token) {
+      try { localStorage.setItem(HV_REFRESH_KEY, d.refresh_token); } catch(e) {}
+      // Zusätzlich ins Schließfach – dieser Login-Kontext hat u. U. einen
+      // anderen Speicher als die installierte App (siehe Kopfkommentar).
+      if (handoffCode) {
+        try {
+          await fetch(CLOUD_FUNCTION_URL, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'stash', handoff_code: handoffCode, refresh_token: d.refresh_token })
+          });
+        } catch(e) {}
+      }
+    }
+    tokenErhalten({ access_token: d.access_token, expires_in: d.expires_in || 3600 });
+  } catch(err) {
+    setStatus('⚠ Anmeldung fehlgeschlagen: ' + err.message, 'fehler');
+  }
+}
+
 // ── Google Identity Services laden ───────────────────────────
 // gapi.js wird nicht mehr verwendet → kein COOP-Fehler mehr
 
@@ -1213,8 +1331,14 @@ function gisGeladen() {
       }
     }
   });
-  // Auto-Login beim Start: wenn E-Mail gespeichert, sofort stillen Versuch starten
-  // (spart den ersten manuellen Klick; bei immediate_failed zeigt error_callback Hinweis)
+  // L1: Der stille GIS-Versuch ist nur noch RÜCKFALL. Gibt es ein
+  // Dauer-Ticket (oder läuft gerade der Rücksprung von Google), macht
+  // hvTokenViaCloud() das Rennen – das klappt auch in der installierten
+  // App, wo der GIS-Weg an blockierten Drittanbieter-Cookies scheitert.
+  if (accessToken) return;
+  if (localStorage.getItem(HV_REFRESH_KEY)) return;
+  if (localStorage.getItem(HV_HANDOFF_KEY)) return;
+  if (new URLSearchParams(window.location.search).get('code')) return;
   var _autoHint = localStorage.getItem('hv_user_email_v1') || '';
   if (_autoHint) {
     try { tokenClient.requestAccessToken({ prompt: 'none', login_hint: _autoHint }); }
@@ -1222,15 +1346,57 @@ function gisGeladen() {
   }
 }
 
+// ── L1: Start – Rücksprung von Google bzw. Dauer-Ticket einlösen ──
+// Läuft VOR dem GIS-Script, damit der Anmeldebildschirm gar nicht erst
+// erscheint, wenn wir uns still anmelden können.
+(function _hvAnmeldungBeimStart() {
+  const q    = new URLSearchParams(window.location.search);
+  const code = q.get('code');
+  if (code) {
+    // Adresszeile sofort säubern – der Code ist einmalig und hat dort
+    // nichts verloren (Verlauf, Lesezeichen, versehentliches Teilen)
+    try { history.replaceState({}, '', window.location.pathname); } catch(e) {}
+    _hvCodeTauschen(code, q.get('state'));
+    return;
+  }
+  if (q.get('error')) {
+    setStatus('⚠ Anmeldung abgebrochen: ' + q.get('error'), 'fehler');
+    try { history.replaceState({}, '', window.location.pathname); } catch(e) {}
+    return;
+  }
+  // Kein Rücksprung → mit vorhandenem Dauer-Ticket still anmelden
+  hvTokenViaCloud().then(function(ok) {
+    if (!ok) return;   // ohne Ticket bleibt der Anmeldebildschirm stehen
+  });
+})();
+
+// L1: Anmeldung über den Code-Weg – liefert im Gegensatz zu vorher ein
+// Dauer-Ticket. Volle Seitenumleitung statt Popup: funktioniert auch in
+// der installierten App, wo Popups häufig blockiert werden.
 function anmelden() {
-  if (!tokenClient) return;
-  var opts = {};
-  var hint = localStorage.getItem('hv_user_email_v1') || '';
-  if (hint) opts.login_hint = hint;
-  tokenClient.requestAccessToken(opts);
+  const params = new URLSearchParams({
+    client_id:              CLIENT_ID,
+    redirect_uri:           _hvRedirectUri(),
+    response_type:          'code',      // Code-Weg → Dauer-Ticket möglich
+    access_type:            'offline',   // Dauer-Ticket anfordern
+    scope:                  SCOPES,
+    include_granted_scopes: 'true'
+  });
+  // Google gibt ein Dauer-Ticket nur bei ausdrücklicher Zustimmung heraus.
+  // Ist schon eines da, sparen wir dem Nutzer den Zustimmungsdialog.
+  if (!localStorage.getItem(HV_REFRESH_KEY)) params.set('prompt', 'consent');
+  const hint = localStorage.getItem('hv_user_email_v1') || '';
+  if (hint) params.set('login_hint', hint);
+  // Einmal-Code fürs Schließfach im APP-Speicher hinterlegen
+  try {
+    const hc = _hvNeuerHandoffCode();
+    localStorage.setItem(HV_HANDOFF_KEY, hc);
+    params.set('state', hc);
+  } catch(e) {}
+  window.location.href = 'https://accounts.google.com/o/oauth2/v2/auth?' + params;
 }
 
-function tokenErhalten(response) {
+function tokenErhalten(response, nurSchluessel) {
   if (response.error) {
     if (response.error === 'immediate_failed' || response.error === 'interaction_required') {
       // Silent-Refresh fehlgeschlagen (Third-Party-Cookies blockiert)
@@ -1253,11 +1419,16 @@ function tokenErhalten(response) {
       .catch(function() {});
   }
   nutzerAnzeigen();
-  sheetLaden();
+  // L1: Bei einer reinen Schlüssel-Erneuerung (stündlich im Hintergrund)
+  // nicht die komplette Tabelle neu laden – nur beim echten Anmelden.
+  if (!nurSchluessel || !alleZeilen.length) sheetLaden();
 }
 
-function hvTokenErneuerung() {
-  if (!tokenClient) return;
+// L1: "Jetzt erneuern" – zuerst lautlos über das Dauer-Ticket versuchen,
+// erst wenn das scheitert den alten Weg mit Anmeldefenster.
+async function hvTokenErneuerung() {
+  if (await hvTokenViaCloud()) return;
+  if (!tokenClient) { anmelden(); return; }
   tokenClient.callback = tokenErhalten;
   var opts = {};
   var hint = localStorage.getItem('hv_user_email_v1') || '';
@@ -1282,20 +1453,25 @@ function hvTokenWarnVerstecken() {
 }
 
 // Jede Minute Token-Restzeit prüfen
-setInterval(function() {
+// L1: Mit Dauer-Ticket läuft die Erneuerung ab jetzt lautlos im Hintergrund –
+// die Warnleiste erscheint nur noch, wenn auch das scheitert.
+setInterval(async function() {
   if (!accessToken || !tokenExpires) return;
   const msLeft = tokenExpires - Date.now();
+  if (msLeft > 10 * 60 * 1000) { hvTokenWarnVerstecken(); return; }
+
+  // 1. Weg: Dauer-Ticket – klappt auch in der installierten App
+  if (await hvTokenViaCloud()) { hvTokenWarnVerstecken(); return; }
+
+  // 2. Weg: alter stiller GIS-Versuch (nur im normalen Browser erfolgreich)
+  if (msLeft > 0 && !_hvWarnActive && tokenClient) {
+    hvTokenWarnZeigen(msLeft / 1000);
+    try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) { hvTokenWarnZeigen(0); }
+    return;
+  }
   if (msLeft <= 0) {
     hvTokenWarnZeigen(0);
     setStatus('⚠️ Google-Anmeldung abgelaufen – bitte oben erneuern.', 'fehler');
-  } else if (msLeft < 10 * 60 * 1000) {
-    // Stille Erneuerung versuchen
-    if (!_hvWarnActive) {
-      hvTokenWarnZeigen(msLeft / 1000);
-      try { tokenClient.requestAccessToken({ prompt: '' }); } catch(e) { hvTokenWarnZeigen(0); }
-    }
-  } else {
-    hvTokenWarnVerstecken();
   }
 }, 60000);
 
@@ -1332,6 +1508,10 @@ function abmelden() {
   //    Fotos + Adressdaten verschwinden vom Gerät)
   try { localStorage.removeItem("hv_bild_cache_v1"); } catch(e) {}
   try { localStorage.removeItem("hv_user_email_v1"); } catch(e) {}
+  // L1: Dauer-Ticket und Schließfach-Code MÜSSEN mit weg – sonst wäre man
+  // beim nächsten Start sofort wieder angemeldet und "Abmelden" wirkungslos.
+  try { localStorage.removeItem(HV_REFRESH_KEY); } catch(e) {}
+  try { localStorage.removeItem(HV_HANDOFF_KEY); } catch(e) {}
   try {
     if (HvThumbCache._db) { HvThumbCache._db.close(); HvThumbCache._db = null; }
     if (HvDataCache._db)  { HvDataCache._db.close();  HvDataCache._db  = null; }

@@ -741,6 +741,88 @@
     }
     #setup-hinweis strong { display: block; margin-bottom: 4px; }
 
+    /* ── Zahnrad-Menü (Z1) ───────────────────────────────────
+       Nur auf schmalen Bildschirmen. Am PC bleibt die Leiste
+       unverändert – der Knopf ist dort gar nicht sichtbar.
+       Die Knöpfe werden per JS UMGEHÄNGT, nicht verdoppelt:
+       gleiche Elemente = gleiche Klick-Handler und gleicher
+       Aktiv-Zustand, kein Abgleich nötig.                      */
+    #einstellungen-btn {
+      display: none;
+      background: none;
+      border: 1px solid rgba(255,255,255,.5);
+      color: #fff;
+      border-radius: 6px;
+      padding: 3px 9px;
+      font-size: 1.1rem;
+      line-height: 1.4;
+      cursor: pointer;
+    }
+    #einstellungen-hintergrund {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,.38);
+      z-index: 290;
+    }
+    #einstellungen-hintergrund.offen { display: block; }
+    #einstellungen-panel {
+      display: none;
+      position: fixed;
+      top: 0; right: 0; bottom: 0;
+      width: min(86vw, 340px);
+      background: var(--card-bg);
+      box-shadow: -4px 0 18px rgba(0,0,0,.3);
+      z-index: 300;
+      padding: 14px 16px 26px;
+      overflow-y: auto;
+    }
+    #einstellungen-panel.offen { display: block; }
+    .eins-kopf {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 16px;
+    }
+    .eins-kopf h2 {
+      font-size: 1rem;
+      font-weight: 500;
+      flex: 1;
+    }
+    #einstellungen-schliessen {
+      background: none;
+      border: none;
+      font-size: 1.2rem;
+      color: var(--text2);
+      cursor: pointer;
+      padding: 2px 6px;
+      line-height: 1;
+    }
+    .eins-gruppe { margin-bottom: 18px; }
+    .eins-titel {
+      font-size: .72rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: var(--text2);
+      margin-bottom: 8px;
+    }
+    .eins-knoepfe {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 7px;
+    }
+    .eins-fuss {
+      border-top: 1px solid var(--grau2);
+      padding-top: 14px;
+      margin-top: 4px;
+    }
+    .eins-version {
+      font-size: .72rem;
+      color: var(--text2);
+      margin-top: 12px;
+    }
+
     /* ── Responsive ──────────────────────────────────────── */
     @media (max-width: 600px) {
       header { flex-wrap: wrap; height: auto; padding: 10px 16px; gap: 10px; }
@@ -748,6 +830,9 @@
       #suchfeld { max-width: 100%; }
       #galerie { grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
       #galerie-bereich { padding: 12px; }
+      /* Z1: Zahnrad nur hier – es sitzt in #nutzer-info und
+         erscheint damit automatisch erst nach dem Anmelden. */
+      #einstellungen-btn { display: inline-flex; }
     }
   </style>
 </head>
@@ -802,6 +887,7 @@
     <img id="nutzer-bild" src="" alt="" style="display:none">
     <span id="nutzer-name"></span>
     <button id="logout-btn">Abmelden</button>
+    <button id="einstellungen-btn" title="Einstellungen" aria-label="Einstellungen">⚙️</button>
   </div>
 </header>
 
@@ -856,6 +942,38 @@
   <div id="keine-ergebnisse">
     <div class="icon">🔍</div>
     <p>Keine Bilder gefunden für diesen Suchbegriff.</p>
+  </div>
+</div>
+
+<!-- Z1: Einstellungs-Menü (nur Handy/Tablet hochkant).
+     Die Gruppen sind LEER – die echten Knöpfe werden beim
+     Start per JS aus der Ergebnis-Leiste hierher umgehängt
+     und beim Wechsel auf einen breiten Bildschirm zurück. -->
+<div id="einstellungen-hintergrund"></div>
+<div id="einstellungen-panel" role="dialog" aria-modal="true" aria-label="Einstellungen">
+  <div class="eins-kopf">
+    <h2>⚙️ Einstellungen</h2>
+    <button id="einstellungen-schliessen" aria-label="Menü schließen">✕</button>
+  </div>
+
+  <div class="eins-gruppe">
+    <div class="eins-titel">Sortierung</div>
+    <div class="eins-knoepfe" id="eins-sortierung"></div>
+  </div>
+
+  <div class="eins-gruppe">
+    <div class="eins-titel">Filter</div>
+    <div class="eins-knoepfe" id="eins-filter"></div>
+  </div>
+
+  <div class="eins-gruppe">
+    <div class="eins-titel">Daten</div>
+    <div class="eins-knoepfe" id="eins-daten"></div>
+  </div>
+
+  <div class="eins-fuss">
+    <div class="eins-knoepfe" id="eins-konto"></div>
+    <div class="eins-version">HV Bild-Suche &middot; v17</div>
   </div>
 </div>
 
@@ -2275,6 +2393,104 @@ document.getElementById("filter-pfad-btn").addEventListener("click", () => geoFi
 
 // Gespeicherte Ansicht beim Start anwenden
 ansichtSetzen(aktiveAnsicht);
+
+// ── Z1: Einstellungs-Menü (Zahnrad) ──────────────────────────
+// Problem (Frank, 23.07.2026, Handy): In #ergebnis-leiste lagen
+// NEUN gleich aussehende Knöpfe nebeneinander. Auf dem Handy
+// brachen die auf 3–4 Zeilen um; zusammen mit Kopfzeile, Status,
+// "Stand:" und Brotkrumen waren rund 6 Zeilen belegt, bevor das
+// erste Bild kam. Ein Einstellungs-Menü wie in PAM Mobil fehlte.
+//
+// Lösung: Die selten gebrauchten Knöpfe werden auf schmalen
+// Bildschirmen ins Zahnrad-Menü UMGEHÄNGT (nicht kopiert!) und
+// beim Wechsel auf einen breiten Bildschirm wieder zurück.
+// Weil es dieselben DOM-Elemente bleiben, gelten alle bisherigen
+// Klick-Handler und der .aktiv-Zustand unverändert weiter –
+// es gibt nichts abzugleichen und nichts doppelt zu pflegen.
+//
+// Sichtbar bleibt am Handy: Trefferzahl, Liste/Kacheln, Ordner
+// und Auswählen (Auswählen ist ein Modus und braucht einen
+// erreichbaren Ausschalter).
+const _MOBIL_MQ = window.matchMedia("(max-width: 600px)");
+
+const _ZAHNRAD_TEILE = [
+  { id: "sort-neu",          gruppe: "sortierung" },
+  { id: "sort-alt",          gruppe: "sortierung" },
+  { id: "sort-reset",        gruppe: "sortierung" },
+  { id: "filter-gps-btn",    gruppe: "filter"     },
+  { id: "filter-pfad-btn",   gruppe: "filter"     },
+  { id: "aktualisieren-btn", gruppe: "daten"      },
+  { id: "cache-info",        gruppe: "daten"      },
+  { id: "logout-btn",        gruppe: "konto"      },
+];
+
+// Ursprungsplatz merken, damit der Rückweg exakt stimmt
+const _zahnradHeimat = new Map();
+_ZAHNRAD_TEILE.forEach(t => {
+  const el = document.getElementById(t.id);
+  if (el) _zahnradHeimat.set(t.id, { eltern: el.parentNode, davor: el.nextSibling });
+});
+
+function zahnradUmbauen() {
+  const mobil = _MOBIL_MQ.matches;
+  _ZAHNRAD_TEILE.forEach(t => {
+    const el = document.getElementById(t.id);
+    if (!el) return;
+    if (mobil) {
+      const ziel = document.getElementById("eins-" + t.gruppe);
+      if (ziel && el.parentNode !== ziel) ziel.appendChild(el);
+    } else {
+      const heimat = _zahnradHeimat.get(t.id);
+      if (heimat && el.parentNode !== heimat.eltern) {
+        heimat.eltern.insertBefore(el, heimat.davor);
+      }
+    }
+  });
+  if (!mobil) zahnradSchliessen();   // am PC gibt es das Menü nicht
+}
+
+function zahnradOeffnen() {
+  document.getElementById("einstellungen-panel").classList.add("offen");
+  document.getElementById("einstellungen-hintergrund").classList.add("offen");
+}
+
+function zahnradSchliessen() {
+  document.getElementById("einstellungen-panel").classList.remove("offen");
+  document.getElementById("einstellungen-hintergrund").classList.remove("offen");
+}
+
+document.getElementById("einstellungen-btn").addEventListener("click", zahnradOeffnen);
+document.getElementById("einstellungen-schliessen").addEventListener("click", zahnradSchliessen);
+document.getElementById("einstellungen-hintergrund").addEventListener("click", zahnradSchliessen);
+
+document.addEventListener("keydown", e => {
+  if (e.key === "Escape") zahnradSchliessen();
+});
+
+// Nach einer Auswahl im Menü zumachen, damit man das Ergebnis sieht.
+// Ausnahme: "Aktualisieren" – da soll der Fortschritt und der neue
+// Stand sichtbar bleiben.
+document.getElementById("einstellungen-panel").addEventListener("click", e => {
+  const btn = e.target.closest("button");
+  if (!btn || btn.id === "aktualisieren-btn") return;
+  zahnradSchliessen();
+});
+
+// Wechsel schmal <-> breit. addListener ist der alte Weg (ältere iOS-Safari).
+if (_MOBIL_MQ.addEventListener)   _MOBIL_MQ.addEventListener("change", zahnradUmbauen);
+else if (_MOBIL_MQ.addListener)   _MOBIL_MQ.addListener(zahnradUmbauen);
+
+// Sicherheitsnetz: Beim Test am 23.07. blieb diese Meldung in einer
+// Umgebung aus – die Knöpfe saßen dann im ausgeblendeten Menü fest und
+// waren am PC nicht mehr erreichbar. Ein zusätzlicher resize-Horcher
+// (entprellt) macht diesen Ausfall unmöglich.
+let _zahnradTimer = null;
+window.addEventListener("resize", () => {
+  clearTimeout(_zahnradTimer);
+  _zahnradTimer = setTimeout(zahnradUmbauen, 150);
+});
+
+zahnradUmbauen();
 
 // ── Aktualisieren-Button ─────────────────────────────────────
 document.getElementById("aktualisieren-btn").addEventListener("click", async () => {

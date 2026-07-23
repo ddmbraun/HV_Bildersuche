@@ -1,0 +1,35 @@
+# ── OAuth-Geheimnisse – NIEMALS committen! ────────────────────
+# Voll-Zugriff auf Google Drive + Sheets, wer diese Dateien hat,
+# hat das komplette Drive-Konto.
+Scanner/credentials.json
+Scanner/token.json
+Scanner/scanner.lock
+
+# Geocoding-Cache (enthält GPS-/Adressdaten der Objekte)
+Scanner/geo_cache_v2.json
+Scanner/geo_cache*.json
+Scanner/360_rohbilder.csv
+Scanner/360_rohbilder.html
+Scanner/360_roh/
+Scanner/360_fertig/
+
+# Lokale Testbilder
+360 test/
+
+# Backups gehören nicht ins Repository
+backup/
+Backup_*/
+
+# Interne Arbeits-/Doku-Dateien (optional – bei Bedarf freigeben)
+AENDERUNGEN_TODO.md
+Pruefbericht_*.md
+CLAUDE.md
+docs/
+
+# Apps-Script-Altbestand (ungenutzt, enthält ggf. SECRET)
+ThumbnailProxy.gs
+_Archiv_ungenutzt/
+
+# Office-/Temp-Dateien
+~$*
+*.tmp

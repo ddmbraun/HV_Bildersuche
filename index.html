@@ -899,7 +899,7 @@
     <div id="modal-bild-container">
       <button id="modal-nav-prev" class="modal-nav" title="Vorheriges Bild (Pfeil links)">‹</button>
       <span id="modal-ladetext">Bild wird geladen …</span>
-      <img id="modal-bild" src="" alt="" style="display:none">
+      <img id="modal-bild" src="" alt="" referrerpolicy="no-referrer" style="display:none">
       <button id="modal-nav-next" class="modal-nav" title="Nächstes Bild (Pfeil rechts)">›</button>
     </div>
     <div id="modal-pfad"></div>
@@ -1628,7 +1628,7 @@ function galerieAnzeigen(zeilen) {
 
     karte.innerHTML = `
       <div class="karte-bild-wrapper">
-        <img class="karte-bild" alt="${escHtml(obj.adresse)}">
+        <img class="karte-bild" referrerpolicy="no-referrer" alt="${escHtml(obj.adresse)}">
         <div class="karte-bild-placeholder">📷</div>
       </div>
       <div class="karte-info">
@@ -2136,7 +2136,7 @@ function ordnerRendern(bilderAnzahl) {
     kachel.dataset.vorschau = e.vorschau;
     kachel.innerHTML = `
       <div class="karte-bild-wrapper">
-        <img class="karte-bild" alt="${escHtml(name)}">
+        <img class="karte-bild" referrerpolicy="no-referrer" alt="${escHtml(name)}">
         <div class="karte-bild-placeholder">📂</div>
       </div>
       <div class="ordner-kachel-info">

@@ -1315,6 +1315,21 @@ async function hvCacheThumb(fileId, blob, modifiedTime) {
   return url;
 }
 
+// v16: DAUERHAFTEN SPEICHER BEANTRAGEN
+// Ohne diese Zusage darf der Browser die gespeicherten Bilder bei Platzmangel
+// jederzeit wegraeumen - dann laedt beim naechsten Besuch wieder alles neu von
+// Google (lange Wartezeit + Datenvolumen, besonders auf Handy/Tablet).
+// Mit der Zusage bleiben sie erhalten. Beim bewussten Abmelden werden sie
+// weiterhin geloescht (Datenschutz, unveraendert).
+(async () => {
+  try {
+    if (navigator.storage && navigator.storage.persist) {
+      const schonDauerhaft = await navigator.storage.persisted();
+      if (!schonDauerhaft) await navigator.storage.persist();
+    }
+  } catch(e) { /* Browser kann das nicht - dann bleibt es beim bisherigen Verhalten */ }
+})();
+
 // ── HV-Sheet-Daten IndexedDB-Cache ──────────────────────────────────────────
 const HvDataCache = {
   _db: null,
@@ -1367,7 +1382,39 @@ const thumbObserver = new IntersectionObserver((entries) => {
 
 // Authentifiziertes Bild-Laden via Drive API v3 → Blob → ObjectURL (kein CORS-Problem)
 // M6: fetchMitAuth erneuert den Token automatisch bei 401
+// v16: Bild fuer die ANZEIGE im Modal - nicht mehr das ORIGINAL.
+// Vorher wurde bei jedem Oeffnen das Originalfoto geladen (Handykamera: 3-8 MB)
+// und danach wieder verworfen - dasselbe Bild morgen erneut = erneut 5 MB.
+// Jetzt: 1600-px-Fassung (~200-400 KB), fuer jeden Bildschirm mehr als genug,
+// rund 15x schneller UND klein genug zum Speichern. Folge: Jedes einmal
+// geoeffnete Bild ist beim naechsten Mal sofort da - ohne dass vorher irgendetwas
+// ausgewaehlt werden muss (wichtig unterwegs, spart Datenvolumen).
+// Das ORIGINAL wird unveraendert geladen fuer: Download, ZIP, PDF, "Sauber teilen"
+// und den 360-Grad-Viewer - die haben eigene alt=media-Aufrufe und sind unberuehrt.
 async function ladeAlsBlobUrl(fileId) {
+  const cacheKey = fileId + '::ansicht1600';
+  // 1. Schon auf dem Geraet?
+  try {
+    const c = await HvThumbCache.get(cacheKey);
+    if (c && c.blob) return URL.createObjectURL(c.blob);
+  } catch(e) { /* weiter mit Laden */ }
+  // 2. Mittelgrosse Fassung ueber die Drive-API holen und speichern
+  try {
+    const metaR = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?fields=thumbnailLink`);
+    if (metaR.ok) {
+      const meta = await metaR.json();
+      if (meta.thumbnailLink) {
+        const url1600 = meta.thumbnailLink.replace(/=s\d+(-c)?$/, '=s1600');
+        const r1600 = await fetch(url1600);
+        if (r1600.ok) {
+          const blob1600 = await r1600.blob();
+          try { await HvThumbCache.put(cacheKey, blob1600, ''); } catch(e) {}
+          return URL.createObjectURL(blob1600);
+        }
+      }
+    }
+  } catch(e) { /* Rueckfall unten */ }
+  // 3. Rueckfall wie bisher: Original laden (z. B. wenn Drive keine Vorschau liefert)
   const r = await fetchMitAuth(`https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`);
   if (!r.ok) throw new Error("HTTP " + r.status);
   const blob = await r.blob();

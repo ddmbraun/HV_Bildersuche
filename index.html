@@ -1022,7 +1022,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v18</div>
+    <div class="eins-version">HV Bild-Suche &middot; v19</div>
   </div>
 </div>
 
@@ -2197,12 +2197,34 @@ function aktiveZeilen() {
 const STOPPWOERTER = new Set(['und','oder','in','an','am','im','der','die','das','des','dem','den','ein','eine','einer','eines','von','vom','mit','bei','zu','zur','zum','aus','auf']);
 
 // A3: Straßen-Abkürzungen normalisieren (auf Suchbegriff und Datenbasis anwenden)
+//
+// A5 (23.07.2026): Umlaute und ß zusätzlich vereinheitlichen.
+// Befund von Frank: "wenn ich das Suche findet es den Ordner nicht".
+// Gemessen im Browser – VORHER schlug jede dieser Suchen fehl:
+//   "muhlweg" / "muehlweg"      fanden den Ordner "Mühlweg 5" nicht
+//   "lons" / "loens"            fanden "Hermann-Löns-Str. 5" nicht
+//   "schutzenstrasse"           fand "Schützenstraße 12" nicht
+//   "bahnhofstraße"             fand "Bahnhofstrasse 1" nicht (!)
+// Der letzte Fall ist der heimtückischste: Er hat gar nichts mit
+// Tippfehlern zu tun, sondern damit, dass die Ordnernamen in Drive
+// mal "straße" und mal "strasse" geschrieben sind. Am Handy kommt
+// dazu, dass Umlaute ein langes Drücken erfordern.
+//
+// Lösung: alle Schreibweisen auf eine gemeinsame Form zurückführen –
+// ä/ae→a, ö/oe→o, ü/ue→u, ß/ss→s. Das läuft über BEIDE Seiten
+// (Suchbegriff UND Datenbasis), deshalb passt es immer zusammen.
+// Reihenfolge wichtig: erst str./pl. auflösen (erzeugt "straße"),
+// danach zusammenfassen.
 function normalisiereStr(t) {
   return t
     .replace(/\bstr\.\s*/g, 'straße ')
     .replace(/\bstr\b/g,    'straße')
     .replace(/\bpl\.\s*/g,  'platz ')
     .replace(/\bpl\b/g,     'platz')
+    .replace(/ae|ä/g, 'a')
+    .replace(/oe|ö/g, 'o')
+    .replace(/ue|ü/g, 'u')
+    .replace(/ss|ß/g, 's')
     .trim();
 }
 

@@ -699,6 +699,54 @@
       padding: 14px 2px 0;
       display: none;
     }
+
+    /* ── T1: Flache Ordner-Trefferliste ──────────────────────
+       Zeigt bei aktiver Suche direkt ALLE passenden Ordner mit
+       vollem Pfad – statt sich Ebene für Ebene durchzuklicken. */
+    #treffer-ordner { display: none; }
+    .to-kopf {
+      font-size: .82rem;
+      color: var(--text2);
+      padding: 2px 2px 9px;
+    }
+    .to-liste {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .to-zeile {
+      display: flex;
+      align-items: center;
+      gap: 9px;
+      width: 100%;
+      background: var(--card-bg);
+      border: 1px solid var(--grau2);
+      border-radius: 8px;
+      padding: 9px 12px;
+      font-size: .86rem;
+      color: var(--text);
+      text-align: left;
+      cursor: pointer;
+      transition: background .12s;
+    }
+    .to-zeile:hover { background: var(--grau2); }
+    .to-pfad { flex: 1; min-width: 0; }
+    .to-eltern { color: var(--text2); font-size: .8rem; }
+    .to-name { font-weight: 500; }
+    .to-anzahl {
+      background: var(--grau);
+      color: var(--text2);
+      border-radius: 10px;
+      padding: 1px 9px;
+      font-size: .76rem;
+      white-space: nowrap;
+    }
+    .to-mehr {
+      font-size: .78rem;
+      color: var(--text2);
+      padding: 9px 2px 0;
+    }
+
     @media (max-width: 600px) {
       #ordner-grid { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 8px; }
     }
@@ -932,6 +980,7 @@
   </div>
   <div id="ordner-bereich">
     <div id="ordner-brotkrumen"></div>
+    <div id="treffer-ordner"></div>
     <div id="ordner-grid"></div>
     <div id="ordner-bilder-trenner"></div>
   </div>
@@ -973,7 +1022,7 @@
 
   <div class="eins-fuss">
     <div class="eins-knoepfe" id="eins-konto"></div>
-    <div class="eins-version">HV Bild-Suche &middot; v17</div>
+    <div class="eins-version">HV Bild-Suche &middot; v18</div>
   </div>
 </div>
 
@@ -2231,6 +2280,81 @@ function ordnerTeilbaumZeilen() {
   return basis.filter(r => ordnerPrefixPasst(pfadTeile(r[COL.pfad] || "")));
 }
 
+// ── T1: Flache Ordner-Trefferliste ───────────────────────────
+// Wunsch Frank (23.07.2026): „ich möchte eine Liste … mit den
+// Ordnern die meine Suchbegriffe enthalten" – statt sich Ebene
+// für Ebene durchzuklicken. Bisher zeigte der Ordner-Modus nur
+// die Unterordner der AKTUELLEN Ebene; bei „wbg hermann" kam
+// also erst „WBG Bad Langensalza", und der eigentlich gesuchte
+// Ordner erschien erst nach dem Hineintippen.
+//
+// Erscheint im Ordner-Modus, sobald gesucht wird UND man ganz
+// oben steht (🏠 Alle Ordner). Sucht bewusst im GANZEN Bestand –
+// das umgeht zugleich die Falle, dass eine Suche innerhalb eines
+// Ordners nur dort sucht. Ersetzt dort die Ebenen-Kacheln, die
+// bei aktiver Suche ohnehin nur eine Zwischenstation wären.
+const TREFFER_ORDNER_MAX = 80;
+
+function trefferOrdnerRendern() {
+  const box = document.getElementById("treffer-ordner");
+  const zeigen = ordnerModus
+              && ordnerPfadAktuell.length === 0
+              && suchfeld.value.trim().length >= 3;
+  if (!zeigen) { box.style.display = "none"; box.innerHTML = ""; return 0; }
+
+  // Suche + Geo-Filter berücksichtigen, aber OHNE Ebenen-Einschränkung
+  let basis = gefiltertZeilen;
+  if (aktiverGeoFilter === 'gps') {
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return o.lat && o.lon; });
+  } else if (aktiverGeoFilter === 'pfad') {
+    basis = basis.filter(r => { const o = zeilenObjekt(r); return !o.lat || !o.lon; });
+  }
+
+  const zaehler = new Map();   // vollständiger Ordnerpfad → Anzahl Treffer
+  basis.forEach(r => {
+    const pfad = String(r[COL.pfad] || "").trim();
+    if (!pfad) return;
+    zaehler.set(pfad, (zaehler.get(pfad) || 0) + 1);
+  });
+
+  const alle = [...zaehler.entries()]
+    .sort((a, b) => a[0].localeCompare(b[0], "de", { numeric: true }));
+  if (alle.length === 0) { box.style.display = "none"; box.innerHTML = ""; return 0; }
+
+  const gezeigt = alle.slice(0, TREFFER_ORDNER_MAX);
+  let html = `<div class="to-kopf">📋 ${alle.length.toLocaleString("de")} `
+           + `${alle.length === 1 ? "Ordner enthält" : "Ordner enthalten"} Treffer `
+           + `– im ganzen Bestand gesucht</div><div class="to-liste">`;
+  gezeigt.forEach(([pfad, anzahl]) => {
+    const seg    = pfadTeile(pfad);
+    const name   = seg[seg.length - 1] || pfad;
+    const eltern = seg.slice(0, -1).join(" › ");
+    html += `<button class="to-zeile" data-pfad="${escHtml(pfad)}" title="${escHtml(pfad)}">`
+          + `<span>📂</span><span class="to-pfad">`
+          + (eltern ? `<span class="to-eltern">${escHtml(eltern)} › </span>` : "")
+          + `<span class="to-name">${escHtml(name)}</span></span>`
+          + `<span class="to-anzahl">${anzahl.toLocaleString("de")}</span></button>`;
+  });
+  html += `</div>`;
+  if (alle.length > gezeigt.length) {
+    // Keine stille Kürzung – die Zahl wird genannt (G7-Denkweise)
+    html += `<div class="to-mehr">… und ${(alle.length - gezeigt.length).toLocaleString("de")} `
+          + `weitere Ordner. Suchbegriff ergänzen, um die Liste zu kürzen.</div>`;
+  }
+  box.innerHTML = html;
+  box.style.display = "block";
+
+  box.querySelectorAll(".to-zeile").forEach(b => {
+    b.addEventListener("click", () => {
+      ordnerPfadAktuell = pfadTeile(b.dataset.pfad);   // direkt dorthin springen
+      anzeigeLimit = 200;
+      sortiertAnzeigen(aktiveSortierung);
+      window.scrollTo({ top: 0 });
+    });
+  });
+  return alle.length;
+}
+
 function ordnerRendern(bilderAnzahl) {
   const bereich = document.getElementById("ordner-bereich");
   const krumen  = document.getElementById("ordner-brotkrumen");
@@ -2272,6 +2396,19 @@ function ordnerRendern(bilderAnzahl) {
     });
     krumen.appendChild(alleBtn);
   }
+
+  // ── T1: Bei aktiver Suche ganz oben die flache Trefferliste
+  //        statt der Ebenen-Kacheln (Wunsch Frank) ──
+  const trefferOrdner = trefferOrdnerRendern();
+  if (trefferOrdner > 0) {
+    grid.innerHTML        = "";
+    grid.style.display    = "none";
+    trenner.style.display = "none";
+    keineErgebnisse.style.display = "none";   // Treffer stecken in den Ordnern
+    ergebnisInfo.textContent = `${trefferOrdner.toLocaleString("de")} Ordner`;
+    return;
+  }
+  grid.style.display = "";
 
   // ── Unterordner der aktuellen Ebene ermitteln ──
   const tiefe = ordnerPfadAktuell.length;
